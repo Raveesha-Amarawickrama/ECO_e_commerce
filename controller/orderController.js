@@ -1,191 +1,241 @@
-import order from "../model/order.js";
-import Payment from "../model/paymentModel.js";
 import asyncErrorHandler from "../utils/asyncErrorHandler.js";
-import md5 from "crypto-js/md5.js";
+import { CustomError } from "../utils/customerError.js";
+import Cart from "../model/cartModel.js";
+import Order from "../model/orderModel.js";
+import Product from "../model/productModel.js";
+import { getOrCreateSessionId } from "../utils/generateSessionId.js";
 
-const payhereNotify = asyncErrorHandler(async (req, res, next) => {
-  const paymentDetails = req.body;
-  const merchantSecret = process.env.MERCHANT_SECRET;
-  const merchantId = paymentDetails.merchant_id;
-  const orderId = paymentDetails.order_id;
-  const amount = parseFloat(paymentDetails.payhere_amount)
-    .toLocaleString("en-us", { minimumFractionDigits: 2 })
-    .replace(",", "");
-  const currency = paymentDetails.payhere_currency;
-  const statusCode = paymentDetails.status_code;
+// @desc    Place order from cart with customer details
+// @route   POST /checkout/checkout
+// @access  Public (Guest checkout - no auth required)
+const placeOrder = asyncErrorHandler(async (req, res, next) => {
+  const {
+    customerName,
+    customerEmail,
+    customerPhone,
+    address,
+    city,
+    state,
+    zipCode,
+    country,
+    paymentMethod,
+    orderNotes,
+    shippingCost,
+    taxRate
+  } = req.body;
 
-  // Create the hash to verify the integrity
-  const hashedSecret = md5(merchantSecret).toString().toUpperCase();
-  const hashString = `${merchantId}${orderId}${amount}${currency}${statusCode}${hashedSecret}`;
-  const calculatedHash = md5(hashString).toString().toUpperCase();
-
-  if (calculatedHash === paymentDetails.md5sig) {
-    // Hash matches, process the payment
-    console.log("Payment verified:", paymentDetails);
-    // Perform actions like updating order status, sending confirmation email, etc.
-
-    res
-      .status(200)
-      .json({ success: true, message: "Payment verified and order saved." });
-  } else {
-    // Hash does not match, reject the notification
-    console.error("Payment verification failed:", paymentDetails);
-    res.sendStatus(400);
-  }
-});
-// const paymentSession = asyncErrorHandler(async (req, res, next) => {
-//   const stripe = Stripe(process.env.STRIPE_SECRET);
-//   const { total } = req.body;
-//   const totalAmountInCents = parseInt(parseFloat(total) * 100);
-//   const lineItems = [
-//     {
-//       price_data: {
-//         currency: "usd",
-//         product_data: {
-//           name: "Total Order Amount",
-//         },
-//         unit_amount: totalAmountInCents,
-//       },
-//       quantity: 1,
-//     },
-//   ];
-
-//   const session = await await stripe.checkout.sessions.create({
-//     payment_method_types: ["card"],
-//     line_items: lineItems,
-//     mode: "payment",
-//     success_url:`${process.env.BASE_URL}/success`,
-//     cancel_url: `${process.env.BASE_URL}/Login`,
-//   });
-
-//   res.json({ id: session.id });
-// });
-
-const addOrder = asyncErrorHandler(async (req, res, next) => {
-  const { user, items, total, billDetails } = req.body;
-  const addOrder = await Payment.create({ user, items, total, billDetails });
-  return res.status(201).json({ message: "ok" });
-  // // Assuming billDetails contains recipient's information
-  // const recipient = billDetails.length > 0 ? billDetails[0] : null;
-  // if (!recipient) {
-  //   return res.status(400).json({ message: "Billing details are missing." });
-  // }
-  // // Create email content
-  // let emailContent = `Dear ${recipient.name},\n\nYour order has been placed successfully.\n\nOrder Details:\n`;
-  // items.forEach((item) => {
-  //   emailContent += `Product: ${item.productName}, Quantity: ${item.quantity}, Subtotal: ${item.subtotal}\n`;
-  // });
-  // emailContent += `\nTotal: ${total}\n\nThank you for your order.`;
-  // // Set up Nodemailer transporter
-  // const transporter = createTransport({
-  //   host: process.env.HOST,
-  //   service: process.env.SERVICE,
-  //   port: Number(process.env.EMAIL_PORT),
-  //   secure: Boolean(process.env.SECURE),
-  //   auth: {
-  //     user: process.env.USER,
-  //     pass: process.env.PASS,
-  //   },
-  // });
-  // // Sending the email
-  // await transporter.sendMail({
-  //   from: "udithaindunil5@gmail.com",
-  //   to: recipient.email,
-  //   subject: "Order Confirmation",
-  //   text: emailContent,
-  // });
-  // return res.status(201).json({ message: "ok" });
-});
-
-const editOrder = async (req, res) => {};
-
-const getOrderWithProductDetails = asyncErrorHandler(async (req, res, next) => {
-  const orders = await Payment.find({})
-    .sort({ createdAt: -1 }) // Sort by 'createdAt' in descending order
-    .populate("user", "-password") // Populate the user field and exclude password
-    .populate({
-      path: "items.product",
-      model: "product",
-      populate: [
-        { path: "categoryId", model: "category" }, // Populate category
-        { path: "brandId", model: "brand" }, // Populate brand
-      ], // Assuming 'Product' is your product model name
-    });
-
-  return res.json(orders);
-});
-const getOneDetails = asyncErrorHandler(async (req, res, next) => {
-  const orderId = req.params.id;
-  const details = await Payment.findById(orderId).populate({
-    path: "items.product",
-    model: "product",
-  });
-
-  res.json(details);
-});
-
-const getOrdersByUser = asyncErrorHandler(async (req, res, next) => {
-  const userId = req.params.userId; // Assuming you're getting the user ID from the route parameters
-  const userOrders = await Payment.find({ user: userId }).sort({ createdAt: -1 }).populate({
-    path: "items.product",
-    model: "product",
-  });
-
-  if (!userOrders) {
-    return res.status(404).send("No orders found for this user.");
+  // Validate customer details
+  if (!customerName || !customerEmail || !customerPhone || !address || !city || !state || !zipCode || !country) {
+    const error = new CustomError("All customer details are required", 400);
+    return next(error);
   }
 
-  res.json(userOrders);
-});
+  const sessionId = getOrCreateSessionId(req);
 
-const updateStatus = asyncErrorHandler(async (req, res, next) => {
-  const orderId = req.params.id;
-  try {
-    const paymentDetails = await Payment.findById(orderId);
-    if (!paymentDetails) {
-      return res.status(404).json({ message: "Payment details not found" });
+  // Get cart
+  const cart = await Cart.findOne({ sessionId });
+
+  if (!cart || cart.items.length === 0) {
+    const error = new CustomError("Cart is empty", 400);
+    return next(error);
+  }
+
+  // Validate stock for all items
+  for (const item of cart.items) {
+    const product = await Product.findById(item.productId);
+    if (!product || product.item_count < item.quantity) {
+      const error = new CustomError(
+        `${item.productName} has insufficient stock`,
+        400
+      );
+      return next(error);
     }
-    const status = paymentDetails.status;
-    let newStatus;
-    let statusMessage;
+  }
 
-    switch (status) {
-      case 1:
-        newStatus = 2;
-        statusMessage = "In Progress";
-        break;
-      case 2:
-        newStatus = 3;
-        statusMessage = "Complete";
-        break;
-      case 3:
-        newStatus = 1;
-        statusMessage = "Pending";
-        break;
-      default:
-        newStatus = 1;
-        statusMessage = "Pending";
-    }
+  // Calculate totals
+  const subtotal = cart.items.reduce((sum, item) => {
+    return sum + item.price * item.quantity;
+  }, 0);
 
-    const response = await Payment.findByIdAndUpdate(
-      orderId,
-      { status: newStatus }, // Update the status based on current status
+  const shipping = shippingCost || 0;
+  const tax = subtotal * (taxRate || 0.1);
+  const totalAmount = subtotal + shipping + tax;
+
+  // Create order items
+  const orderItems = cart.items.map((item) => ({
+    productId: item.productId,
+    productName: item.productName,
+    price: item.price,
+    quantity: item.quantity,
+    mainImage: item.mainImage,
+    color: item.color,
+    size: item.size,
+    total: item.price * item.quantity
+  }));
+
+  // Create order
+  const order = new Order({
+    customerName,
+    customerEmail,
+    customerPhone,
+    address,
+    city,
+    state,
+    zipCode,
+    country,
+    items: orderItems,
+    subtotal,
+    shippingCost: shipping,
+    tax,
+    totalAmount,
+    paymentMethod: paymentMethod || "cod",
+    orderNotes,
+    sessionId,
+    orderStatus: "pending",
+    paymentStatus: paymentMethod === "cod" ? "unpaid" : "unpaid"
+  });
+
+  await order.save();
+
+  // Reduce product stock
+  for (const item of cart.items) {
+    await Product.findByIdAndUpdate(
+      item.productId,
+      { $inc: { item_count: -item.quantity } },
       { new: true }
     );
-
-    res.status(200).json({ message: `Status updated to ${statusMessage}` });
-
-  } catch (error) {
-    console.error("Error fetching payment details:", error);
-    return res.status(500).json({ message: "Server error" });
   }
+
+  // Clear cart after successful order
+  cart.items = [];
+  await cart.save();
+
+  res.status(201).json({
+    success: true,
+    message: "Order placed successfully",
+    order: {
+      orderNumber: order.orderNumber,
+      orderStatus: order.orderStatus,
+      totalAmount: order.totalAmount,
+      paymentStatus: order.paymentStatus,
+      createdAt: order.createdAt
+    }
+  });
+});
+
+// @desc    Get order details
+// @route   GET /checkout/:orderNumber
+// @access  Public (Guest can view with order number)
+const getOrderDetails = asyncErrorHandler(async (req, res, next) => {
+  const { orderNumber } = req.params;
+
+  const order = await Order.findOne({ orderNumber }).populate("items.productId");
+
+  if (!order) {
+    const error = new CustomError("Order not found", 404);
+    return next(error);
+  }
+
+  res.status(200).json({
+    success: true,
+    order
+  });
+});
+
+// @desc    Get all orders by session (guest orders)
+// @route   GET /checkout/session/:sessionId
+// @access  Public
+const getOrdersBySession = asyncErrorHandler(async (req, res, next) => {
+  const { sessionId } = req.params;
+
+  const orders = await Order.find({ sessionId })
+    .select("-items.productId")
+    .sort({ createdAt: -1 });
+
+  res.status(200).json({
+    success: true,
+    orders,
+    count: orders.length
+  });
+});
+
+// @desc    Get all orders (Admin)
+// @route   GET /checkout/admin/all
+// @access  Private (Admin only)
+const getAllOrders = asyncErrorHandler(async (req, res, next) => {
+  const orders = await Order.find()
+    .populate("items.productId")
+    .sort({ createdAt: -1 });
+
+  res.status(200).json({
+    success: true,
+    orders,
+    count: orders.length
+  });
+});
+
+// @desc    Update order status (Admin)
+// @route   PUT /checkout/:orderNumber/status
+// @access  Private (Admin only)
+const updateOrderStatus = asyncErrorHandler(async (req, res, next) => {
+  const { orderNumber } = req.params;
+  const { orderStatus, trackingNumber } = req.body;
+
+  const order = await Order.findOneAndUpdate(
+    { orderNumber },
+    {
+      orderStatus,
+      trackingNumber,
+      updatedAt: new Date()
+    },
+    { new: true }
+  );
+
+  if (!order) {
+    const error = new CustomError("Order not found", 404);
+    return next(error);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Order status updated",
+    order
+  });
+});
+
+// @desc    Update payment status (Admin)
+// @route   PUT /checkout/:orderNumber/payment
+// @access  Private (Admin only)
+const updatePaymentStatus = asyncErrorHandler(async (req, res, next) => {
+  const { orderNumber } = req.params;
+  const { paymentStatus } = req.body;
+
+  const order = await Order.findOneAndUpdate(
+    { orderNumber },
+    {
+      paymentStatus,
+      updatedAt: new Date()
+    },
+    { new: true }
+  );
+
+  if (!order) {
+    const error = new CustomError("Order not found", 404);
+    return next(error);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Payment status updated",
+    order
+  });
 });
 
 export {
-  addOrder,
-  getOrderWithProductDetails,
-  getOneDetails,
-  getOrdersByUser,
-  payhereNotify,
-  updateStatus
+  placeOrder,
+  getOrderDetails,
+  getOrdersBySession,
+  getAllOrders,
+  updateOrderStatus,
+  updatePaymentStatus
 };
