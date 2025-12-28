@@ -6,6 +6,7 @@ import productRouter from "./routes/productRouter.js";
 import billRouter from "./routes/billRouter.js";
 import cartRoutes from './routes/cartRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
+import contactRoutes from './routes/contactRoutes.js'; 
 
 import authRouter from "./routes/auth.js";
 import orderRouter from "./routes/orderRoutes.js";
@@ -24,13 +25,11 @@ dotenv.config();
 const app = express();
 app.use(cookieParser());
 
-
-const port = parseInt(process.env.PORT, 10) || 3000;
+const port = parseInt(process.env.PORT, 10) || 5000;
 
 // Middleware
 app.use(json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
 
 const allowedOrigins = [
   "http://localhost:5173", 
@@ -68,13 +67,11 @@ app.use("/products", productRouter);
 app.use("/bill", billRouter);
 app.use("/auth", authRouter);
 app.use("/order", orderRouter);
-
-
 app.use("/cart", cartRoutes);
-
 app.use("/checkout", orderRoutes);
 app.use("/feedback", feedbackRouter);
 app.use("/dashboard", countRouter);
+app.use("/contact", contactRoutes); // Use contact routes without /api
 
 // =====================
 // ERROR HANDLING
@@ -108,4 +105,5 @@ app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
   console.log(`Allowed Origins: ${allowedOrigins.join(", ")}`);
   console.log(`Cart routes available at: http://localhost:${port}/api/cart`);
+  console.log(`Contact routes available at: http://localhost:${port}/contact`);
 });
