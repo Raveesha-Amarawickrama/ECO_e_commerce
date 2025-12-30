@@ -1,6 +1,10 @@
 import express, { json } from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+import session from "express-session";
+import passport from "passport";
+import passportConfig from "./config/passport.js";
+import jwt from "jsonwebtoken";
 import userRouter from "./routes/userRouter.js";
 import productRouter from "./routes/productRouter.js";
 import billRouter from "./routes/billRouter.js";
@@ -46,6 +50,19 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization", 'x-session-id']
   })
 );
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "your-secret-key",
+    resave: false,
+    saveUninitialized: false,
+  })
+);
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+passportConfig(passport);
 
 // File paths for ES modules
 const __filename = fileURLToPath(import.meta.url);

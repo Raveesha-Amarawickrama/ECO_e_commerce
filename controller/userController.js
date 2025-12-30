@@ -4,6 +4,7 @@ import asyncErrorHandler from "../utils/asyncErrorHandler.js";
 import jwt from "jsonwebtoken";
 import { CustomError } from "../utils/customerError.js";
 import sendEmail from "../utils/sendEmail.js";
+import crypto from "crypto";
 
 const singToken = (id, name) => {
   return jwt.sign({ id, name }, process.env.JWT_SECRET, {
@@ -143,3 +144,95 @@ export {
   logOutUser,
   verifyGmail,
 };
+
+const forgotPassword = asyncErrorHandler(async (req, res, next) => {
+  const { email } = req.body;
+
+  const userFind = await user.findOne({ username: email });
+  if (!userFind) {
+    const error = new CustomError("User not found", 404);
+    return next(error);
+  }
+
+  // Generate reset token
+  const resetToken = crypto.randomBytes(32).toString("hex");
+  const resetTokenHash = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
+
+  // Save token to user (you need to add these fields to your schema)
+  userFind.resetPasswordToken = resetTokenHash;
+  userFind.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+  await userFind.save();
+
+  // Create reset URL
+  const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
+
+  // Email message
+  const message = `
+    <h1>You requested a password reset</h1>
+    <p>Please click the link below to reset your password:</p>
+    <a href="${resetUrl}" clicktracking=off>${resetUrl}</a>
+    <p>This link will expire in 10 minutes.</p>
+  `;
+
+  try {
+    await sendEmail({
+      to: userFind.username,
+      subject: "Password Reset Request",
+      html: message,
+    });
+
+    res.status(200).json({ message: "Email sent successfully" });
+  } catch (err) {
+    userFind.resetPasswordToken = undefined;
+    userFind.resetPasswordExpire = undefined;
+    await userFind.save();
+
+    const error = new CustomError("Email could not be sent", 500);
+    return next(error);
+  }
+});
+
+const resetPassword = asyncErrorHandler(async (req, res, next) => {
+  const { token } = req.params;
+  const { password } = req.body;
+
+  // Hash the token from URL
+  const resetTokenHash = crypto
+    .createHash("sha256")
+    .update(token)
+    .digest("hex");
+
+  // Find user with valid token
+  const userFind = await user.findOne({
+    resetPasswordToken: resetTokenHash,
+    resetPasswordExpire: { $gt: Date.now() },
+  });
+
+  if (!userFind) {
+    const error = new CustomError("Invalid or expired token", 400);
+    return next(error);
+  }
+
+  // Validate password
+  if (!password || password.length < 8) {
+    const error = new CustomError("Password must be at least 8 characters", 400);
+    return next(error);
+  }
+
+  // Hash new password
+  const salt = await bcrypt.genSalt(10);
+  const hash = await bcrypt.hash(password, salt);
+
+  // Update user
+  userFind.password = hash;
+  userFind.resetPasswordToken = undefined;
+  userFind.resetPasswordExpire = undefined;
+  await userFind.save();
+
+  res.status(200).json({ message: "Password reset successful" });
+});
+
+export { forgotPassword, resetPassword };

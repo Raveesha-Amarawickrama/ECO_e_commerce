@@ -1,40 +1,38 @@
 import { Router } from "express";
 import passport from "passport";
+import jwt from "jsonwebtoken";
 
-const router=Router();
+const router = Router();
 
-router.get("/login/success", (req, res) => {
-	if (req.user) {
-		res.status(200).json({
-			error: false,
-			message: "Successfully Loged In",
-			user: req.user,
-		});
-	} else {
-		res.status(403).json({ error: true, message: "Not Authorized" });
-	}
-});
+// Google OAuth routes
+router.get("/google", passport.authenticate("google", { 
+  scope: ["profile", "email"] 
+}));
 
-router.get("/login/failed", (req, res) => {
-	res.status(401).json({
-		error: true,
-		message: "Log in failure",
-	});
-});
-
-router.get("/google", passport.authenticate("google", ["profile", "email"]));
-
-router.get(
-	"/google/callback",
-	passport.authenticate("google", {
-		successRedirect: process.env.CLIENT_URL,
-		failureRedirect: "/login/failed",
-	})
+router.get("/google/callback", 
+  passport.authenticate("google", { 
+    failureRedirect: "/login",
+    session: false 
+  }),
+  (req, res) => {
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: req.user._id, name: req.user.username }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: "1d" }
+    );
+    
+    // Set cookie
+    res.cookie("token", token, {
+      httpOnly: true,
+      path: "/",
+      expires: new Date(Date.now() + 1000 * 86400),
+      sameSite: "lax",
+    });
+    
+    // Redirect to frontend with token
+    res.redirect(`http://localhost:5173/?token=${token}`);
+  }
 );
 
-router.get("/logout", (req, res) => {
-	req.logout();
-	res.redirect(process.env.CLIENT_URL);
-});
-
-export default router
+export default router;
