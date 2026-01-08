@@ -17,6 +17,7 @@ const cartItemSchema = new mongoose.Schema({
   mainImage: String,
   color: String,
   size: String,
+  weight: Number, // Add weight field to store item weight
   addedAt: {
     type: Date,
     default: Date.now

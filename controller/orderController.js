@@ -6,7 +6,7 @@ import Product from "../model/productModel.js";
 import { getOrCreateSessionId } from "../utils/generateSessionId.js";
 
 // @desc    Place order from cart with customer details
-// @route   POST /checkout/checkout
+// @route   POST /order/checkout
 // @access  Public (Guest checkout - no auth required)
 const placeOrder = asyncErrorHandler(async (req, res, next) => {
   const {
@@ -19,14 +19,22 @@ const placeOrder = asyncErrorHandler(async (req, res, next) => {
     zipCode,
     country,
     paymentMethod,
+    shippingMethod,
+    town,
     orderNotes,
     shippingCost,
     taxRate
   } = req.body;
 
   // Validate customer details
-  if (!customerName || !customerEmail || !customerPhone || !address || !city || !state || !zipCode || !country) {
-    const error = new CustomError("All customer details are required", 400);
+  if (!customerName || !customerEmail || !customerPhone || !address || !city || !zipCode || !country) {
+    const error = new CustomError("All required customer details must be provided", 400);
+    return next(error);
+  }
+
+  // Validate payment method
+  if (!paymentMethod || !['cod', 'card'].includes(paymentMethod)) {
+    const error = new CustomError("Valid payment method is required (cod or card)", 400);
     return next(error);
   }
 
@@ -52,16 +60,16 @@ const placeOrder = asyncErrorHandler(async (req, res, next) => {
     }
   }
 
-  // Calculate totals
+  // Calculate totals (NO TAX)
   const subtotal = cart.items.reduce((sum, item) => {
     return sum + item.price * item.quantity;
   }, 0);
 
   const shipping = shippingCost || 0;
-  const tax = subtotal * (taxRate || 0.1);
-  const totalAmount = subtotal + shipping + tax;
+  const tax = 0; // No tax
+  const totalAmount = subtotal + shipping;
 
-  // Create order items
+  // Create order items with weight
   const orderItems = cart.items.map((item) => ({
     productId: item.productId,
     productName: item.productName,
@@ -70,8 +78,12 @@ const placeOrder = asyncErrorHandler(async (req, res, next) => {
     mainImage: item.mainImage,
     color: item.color,
     size: item.size,
+    weight: item.weight || 0,
     total: item.price * item.quantity
   }));
+
+  // Determine initial payment status based on payment method
+  const initialPaymentStatus = paymentMethod === 'card' ? 'unpaid' : 'unpaid';
 
   // Create order
   const order = new Order({
@@ -80,35 +92,61 @@ const placeOrder = asyncErrorHandler(async (req, res, next) => {
     customerPhone,
     address,
     city,
-    state,
+    state: state || '',
     zipCode,
     country,
     items: orderItems,
     subtotal,
     shippingCost: shipping,
-    tax,
+    tax: 0,
     totalAmount,
-    paymentMethod: paymentMethod || "cod",
-    orderNotes,
+    paymentMethod,
+    shippingMethod: shippingMethod || 'pickup',
+    town: town || '',
+    orderNotes: orderNotes || '',
     sessionId,
     orderStatus: "pending",
-    paymentStatus: paymentMethod === "cod" ? "unpaid" : "unpaid"
+    paymentStatus: initialPaymentStatus
   });
 
-  await order.save();
+  // Save order
+  try {
+    await order.save();
+    
+    // Verify order was saved with orderNumber
+    if (!order.orderNumber) {
+      throw new Error("Order number was not generated");
+    }
+
+    console.log("Order created successfully:", order.orderNumber);
+  } catch (error) {
+    console.error("Error saving order:", error);
+    const customError = new CustomError("Failed to create order. Please try again.", 500);
+    return next(customError);
+  }
 
   // Reduce product stock
-  for (const item of cart.items) {
-    await Product.findByIdAndUpdate(
-      item.productId,
-      { $inc: { item_count: -item.quantity } },
-      { new: true }
-    );
+  try {
+    for (const item of cart.items) {
+      await Product.findByIdAndUpdate(
+        item.productId,
+        { $inc: { item_count: -item.quantity } },
+        { new: true }
+      );
+    }
+  } catch (error) {
+    console.error("Error updating stock:", error);
+    // Stock update failed but order was created - log this for manual review
   }
 
   // Clear cart after successful order
-  cart.items = [];
-  await cart.save();
+  try {
+    cart.items = [];
+    await cart.save();
+  } catch (error) {
+    console.error("Error clearing cart:", error);
+    // Cart clearing failed but order was created - not critical
+  }
 
   res.status(201).json({
     success: true,
@@ -118,13 +156,14 @@ const placeOrder = asyncErrorHandler(async (req, res, next) => {
       orderStatus: order.orderStatus,
       totalAmount: order.totalAmount,
       paymentStatus: order.paymentStatus,
+      paymentMethod: order.paymentMethod,
       createdAt: order.createdAt
     }
   });
 });
 
 // @desc    Get order details
-// @route   GET /checkout/:orderNumber
+// @route   GET /order/:orderNumber
 // @access  Public (Guest can view with order number)
 const getOrderDetails = asyncErrorHandler(async (req, res, next) => {
   const { orderNumber } = req.params;
@@ -143,7 +182,7 @@ const getOrderDetails = asyncErrorHandler(async (req, res, next) => {
 });
 
 // @desc    Get all orders by session (guest orders)
-// @route   GET /checkout/session/:sessionId
+// @route   GET /order/session/:sessionId
 // @access  Public
 const getOrdersBySession = asyncErrorHandler(async (req, res, next) => {
   const { sessionId } = req.params;
@@ -160,7 +199,7 @@ const getOrdersBySession = asyncErrorHandler(async (req, res, next) => {
 });
 
 // @desc    Get all orders (Admin)
-// @route   GET /checkout/admin/all
+// @route   GET /order/admin/all
 // @access  Private (Admin only)
 const getAllOrders = asyncErrorHandler(async (req, res, next) => {
   const orders = await Order.find()
@@ -175,17 +214,24 @@ const getAllOrders = asyncErrorHandler(async (req, res, next) => {
 });
 
 // @desc    Update order status (Admin)
-// @route   PUT /checkout/:orderNumber/status
+// @route   PUT /order/:orderNumber/status
 // @access  Private (Admin only)
 const updateOrderStatus = asyncErrorHandler(async (req, res, next) => {
   const { orderNumber } = req.params;
   const { orderStatus, trackingNumber } = req.body;
 
+  const validStatuses = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"];
+  
+  if (!validStatuses.includes(orderStatus)) {
+    const error = new CustomError("Invalid order status", 400);
+    return next(error);
+  }
+
   const order = await Order.findOneAndUpdate(
     { orderNumber },
     {
       orderStatus,
-      trackingNumber,
+      ...(trackingNumber && { trackingNumber }),
       updatedAt: new Date()
     },
     { new: true }
@@ -203,12 +249,19 @@ const updateOrderStatus = asyncErrorHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Update payment status (Admin)
-// @route   PUT /checkout/:orderNumber/payment
-// @access  Private (Admin only)
+// @desc    Update payment status (Admin or Payment Gateway)
+// @route   PUT /order/:orderNumber/payment
+// @access  Public (for payment gateway callbacks)
 const updatePaymentStatus = asyncErrorHandler(async (req, res, next) => {
   const { orderNumber } = req.params;
   const { paymentStatus } = req.body;
+
+  const validPaymentStatuses = ["unpaid", "paid", "failed"];
+  
+  if (!validPaymentStatuses.includes(paymentStatus)) {
+    const error = new CustomError("Invalid payment status", 400);
+    return next(error);
+  }
 
   const order = await Order.findOneAndUpdate(
     { orderNumber },

@@ -19,7 +19,7 @@ const addToCart = asyncErrorHandler(async (req, res, next) => {
   // Get or create session ID
   const sessionId = getOrCreateSessionId(req);
 
-  // Verify product exists
+  // Verify product exists and get its details including weight
   const productData = await Product.findById(productId);
   if (!productData) {
     const error = new CustomError("Product not found", 404);
@@ -64,7 +64,7 @@ const addToCart = asyncErrorHandler(async (req, res, next) => {
 
     cart.items[existingItemIndex].quantity = newQuantity;
   } else {
-    // Add new item
+    // Add new item with weight
     cart.items.push({
       productId,
       productName: productData.productName,
@@ -72,7 +72,8 @@ const addToCart = asyncErrorHandler(async (req, res, next) => {
       quantity: parseInt(quantity),
       mainImage: productData.mainImage,
       color: color || "",
-      size: size || ""
+      size: size || "",
+      weight: productData.weight || 0 // Include weight from product
     });
   }
 

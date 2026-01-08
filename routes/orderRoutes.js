@@ -15,15 +15,10 @@ const router = Router();
 // POST - Place order with customer details
 router.post("/checkout", placeOrder);
 
-// GET - Get order details by order number
-router.get("/:orderNumber", getOrderDetails);
-
-// GET - Get orders by session ID (guest orders)
+// GET - Get orders by session ID (guest orders) - MUST BE BEFORE /:orderNumber
 router.get("/session/:sessionId", getOrdersBySession);
 
-// Admin routes (if you add auth later)
-
-// GET - Get all orders (admin only)
+// Admin routes - MUST BE BEFORE /:orderNumber
 router.get("/admin/all", getAllOrders);
 
 // PUT - Update order status (admin only)
@@ -31,5 +26,8 @@ router.put("/:orderNumber/status", updateOrderStatus);
 
 // PUT - Update payment status (admin only)
 router.put("/:orderNumber/payment", updatePaymentStatus);
+
+// GET - Get order details by order number - MUST BE LAST DYNAMIC ROUTE
+router.get("/:orderNumber", getOrderDetails);
 
 export default router;

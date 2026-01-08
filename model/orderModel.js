@@ -11,6 +11,7 @@ const orderItemSchema = new mongoose.Schema({
   mainImage: String,
   color: String,
   size: String,
+  weight: Number,
   total: Number
 });
 
@@ -19,16 +20,18 @@ const orderSchema = new mongoose.Schema(
     orderNumber: {
       type: String,
       unique: true,
-      required: true
+      required: true,
+      index: true
     },
-    // Customer Details (from checkout form)
+    // Customer Details
     customerName: {
       type: String,
       required: true
     },
     customerEmail: {
       type: String,
-      required: true
+      required: true,
+      index: true
     },
     customerPhone: {
       type: String,
@@ -74,46 +77,59 @@ const orderSchema = new mongoose.Schema(
     orderStatus: {
       type: String,
       enum: ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"],
-      default: "pending"
+      default: "pending",
+      index: true
     },
     paymentStatus: {
       type: String,
       enum: ["unpaid", "paid", "failed"],
-      default: "unpaid"
+      default: "unpaid",
+      index: true
     },
     paymentMethod: {
       type: String,
-      enum: ["credit_card", "debit_card", "paypal", "cod", "bank_transfer"],
-      default: "cod"
+      enum: ["card", "cod"],
+      default: "cod",
+      required: true
+    },
+    // Shipping Details
+    shippingMethod: {
+      type: String,
+      enum: ["pickup", "courier", "post"],
+      default: "pickup"
+    },
+    town: {
+      type: String,
+      default: ""
     },
     // Additional Notes
     orderNotes: String,
     trackingNumber: String,
-    sessionId: String,
-    createdAt: {
-      type: Date,
-      default: Date.now
-    },
-    updatedAt: {
-      type: Date,
-      default: Date.now
+    sessionId: {
+      type: String,
+      index: true
     }
   },
-  { timestamps: true }
+  { 
+    timestamps: true,
+    strict: true
+  }
 );
 
-// Auto-generate order number before saving
-orderSchema.pre("save", async function (next) {
-  if (this.isNew) {
-    // Generate unique order number
-    const timestamp = Date.now().toString().slice(-6);
-    const random = Math.floor(Math.random() * 1000)
+// Generate unique order number before validation
+orderSchema.pre("validate", function (next) {
+  if (this.isNew && !this.orderNumber) {
+    const timestamp = Date.now().toString();
+    const random = Math.floor(Math.random() * 100000)
       .toString()
-      .padStart(3, "0");
+      .padStart(5, "0");
     this.orderNumber = `ORD-${timestamp}-${random}`;
   }
   next();
 });
+
+// Add index creation to ensure proper indexing
+orderSchema.index({ createdAt: -1 });
 
 const Order = mongoose.model("order", orderSchema);
 
