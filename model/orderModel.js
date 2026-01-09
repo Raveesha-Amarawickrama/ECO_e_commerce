@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 const orderItemSchema = new mongoose.Schema({
@@ -82,13 +83,13 @@ const orderSchema = new mongoose.Schema(
     },
     paymentStatus: {
       type: String,
-      enum: ["unpaid", "paid", "failed"],
+      enum: ["unpaid", "paid", "failed", "refunded"],
       default: "unpaid",
       index: true
     },
     paymentMethod: {
       type: String,
-      enum: ["card", "cod"],
+      enum: ["card", "cod", "payhere"],
       default: "cod",
       required: true
     },
@@ -108,6 +109,17 @@ const orderSchema = new mongoose.Schema(
     sessionId: {
       type: String,
       index: true
+    },
+    // PayHere Integration Fields
+    paymentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Payment"
+    },
+    payhereTransactionId: String,
+    payhereHash: String,
+    paymentGatewayResponse: {
+      type: Map,
+      of: String
     }
   },
   { 

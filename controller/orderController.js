@@ -1,3 +1,4 @@
+
 import asyncErrorHandler from "../utils/asyncErrorHandler.js";
 import { CustomError } from "../utils/customerError.js";
 import Cart from "../model/cartModel.js";
@@ -8,7 +9,7 @@ import { getOrCreateSessionId } from "../utils/generateSessionId.js";
 // @desc    Place order from cart with customer details
 // @route   POST /order/checkout
 // @access  Public (Guest checkout - no auth required)
-const placeOrder = asyncErrorHandler(async (req, res, next) => {
+export const placeOrder = asyncErrorHandler(async (req, res, next) => {
   const {
     customerName,
     customerEmail,
@@ -32,9 +33,9 @@ const placeOrder = asyncErrorHandler(async (req, res, next) => {
     return next(error);
   }
 
-  // Validate payment method
-  if (!paymentMethod || !['cod', 'card'].includes(paymentMethod)) {
-    const error = new CustomError("Valid payment method is required (cod or card)", 400);
+  // Validate payment method - UPDATED to include 'payhere'
+  if (!paymentMethod || !['cod', 'card', 'payhere'].includes(paymentMethod)) {
+    const error = new CustomError("Valid payment method is required (cod, card, or payhere)", 400);
     return next(error);
   }
 
@@ -83,7 +84,7 @@ const placeOrder = asyncErrorHandler(async (req, res, next) => {
   }));
 
   // Determine initial payment status based on payment method
-  const initialPaymentStatus = paymentMethod === 'card' ? 'unpaid' : 'unpaid';
+  const initialPaymentStatus = (paymentMethod === 'card' || paymentMethod === 'payhere') ? 'unpaid' : 'unpaid';
 
   // Create order
   const order = new Order({
@@ -157,6 +158,12 @@ const placeOrder = asyncErrorHandler(async (req, res, next) => {
       totalAmount: order.totalAmount,
       paymentStatus: order.paymentStatus,
       paymentMethod: order.paymentMethod,
+      customerEmail: order.customerEmail,
+      customerPhone: order.customerPhone,
+      customerName: order.customerName,
+      address: order.address,
+      city: order.city,
+      items: order.items,
       createdAt: order.createdAt
     }
   });
@@ -165,7 +172,7 @@ const placeOrder = asyncErrorHandler(async (req, res, next) => {
 // @desc    Get order details
 // @route   GET /order/:orderNumber
 // @access  Public (Guest can view with order number)
-const getOrderDetails = asyncErrorHandler(async (req, res, next) => {
+export const getOrderDetails = asyncErrorHandler(async (req, res, next) => {
   const { orderNumber } = req.params;
 
   const order = await Order.findOne({ orderNumber }).populate("items.productId");
@@ -184,7 +191,7 @@ const getOrderDetails = asyncErrorHandler(async (req, res, next) => {
 // @desc    Get all orders by session (guest orders)
 // @route   GET /order/session/:sessionId
 // @access  Public
-const getOrdersBySession = asyncErrorHandler(async (req, res, next) => {
+export const getOrdersBySession = asyncErrorHandler(async (req, res, next) => {
   const { sessionId } = req.params;
 
   const orders = await Order.find({ sessionId })
@@ -201,7 +208,7 @@ const getOrdersBySession = asyncErrorHandler(async (req, res, next) => {
 // @desc    Get all orders (Admin)
 // @route   GET /order/admin/all
 // @access  Private (Admin only)
-const getAllOrders = asyncErrorHandler(async (req, res, next) => {
+export const getAllOrders = asyncErrorHandler(async (req, res, next) => {
   const orders = await Order.find()
     .populate("items.productId")
     .sort({ createdAt: -1 });
@@ -216,7 +223,7 @@ const getAllOrders = asyncErrorHandler(async (req, res, next) => {
 // @desc    Update order status (Admin)
 // @route   PUT /order/:orderNumber/status
 // @access  Private (Admin only)
-const updateOrderStatus = asyncErrorHandler(async (req, res, next) => {
+export const updateOrderStatus = asyncErrorHandler(async (req, res, next) => {
   const { orderNumber } = req.params;
   const { orderStatus, trackingNumber } = req.body;
 
@@ -252,23 +259,34 @@ const updateOrderStatus = asyncErrorHandler(async (req, res, next) => {
 // @desc    Update payment status (Admin or Payment Gateway)
 // @route   PUT /order/:orderNumber/payment
 // @access  Public (for payment gateway callbacks)
-const updatePaymentStatus = asyncErrorHandler(async (req, res, next) => {
+export const updatePaymentStatus = asyncErrorHandler(async (req, res, next) => {
   const { orderNumber } = req.params;
-  const { paymentStatus } = req.body;
+  const { paymentStatus, paymentMethod } = req.body;
 
-  const validPaymentStatuses = ["unpaid", "paid", "failed"];
+  const validPaymentStatuses = ["unpaid", "paid", "failed", "refunded"];
   
   if (!validPaymentStatuses.includes(paymentStatus)) {
     const error = new CustomError("Invalid payment status", 400);
     return next(error);
   }
 
+  const updateData = {
+    paymentStatus,
+    updatedAt: new Date()
+  };
+
+  if (paymentMethod) {
+    updateData.paymentMethod = paymentMethod;
+  }
+
+  // If payment is successful, update order status to confirmed
+  if (paymentStatus === 'paid') {
+    updateData.orderStatus = 'confirmed';
+  }
+
   const order = await Order.findOneAndUpdate(
     { orderNumber },
-    {
-      paymentStatus,
-      updatedAt: new Date()
-    },
+    updateData,
     { new: true }
   );
 
@@ -281,14 +299,6 @@ const updatePaymentStatus = asyncErrorHandler(async (req, res, next) => {
     success: true,
     message: "Payment status updated",
     order
+
   });
 });
-
-export {
-  placeOrder,
-  getOrderDetails,
-  getOrdersBySession,
-  getAllOrders,
-  updateOrderStatus,
-  updatePaymentStatus
-};

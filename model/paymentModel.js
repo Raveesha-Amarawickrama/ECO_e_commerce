@@ -1,73 +1,73 @@
+
 import mongoose from "mongoose";
 
-
-const payemtSchema = new mongoose.Schema(
-  {
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "user",
-      required: true,
-    },
-    items: [
-      {
-        product: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "product",
-          required: true,
-        },
-        quantity: {
-          type: Number,
-          required: [true,"enter the quantity"],
-          min: 1,
-        },
-        subtotal:{
-          type:String,
-        }
-      },
-    ],
-   
-    billDetails:[
-        {
-          name:{
-            type:String,
-            required:[true,"name"]
-          },
-          address:{
-            type:String,
-            required:[true,"enter your address"]
-          },
-          town:{
-            type:String,
-            required:[true,"enter the town"]
-          },
-          phoneNo:{
-            type:Number,
-            required:[true,"enter the phone number"]
-          },
-          email:{
-            type:String,
-            required:[true,"enter the email"]
-          },
-          deliveryOption:{
-            type:String,
-            required:[true,"enter delivery option"]
-          }
-        }
-
-    ],
-    total: {
-      type: Number,
-      required: true,
-    },
-    status:{
-      type:Number,
-      default:1
-    }
-    
-    // Add other fields as necessary (e.g., order status, timestamps, etc.)
+const paymentSchema = new mongoose.Schema({
+  orderNumber: {
+    type: String,
+    required: true,
+    ref: 'Order',
+    index: true
   },
-  { timestamps: true }
-);
+  amount: {
+    type: Number,
+    required: true
+  },
+  currency: {
+    type: String,
+    default: 'LKR'
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'processing', 'completed', 'failed', 'canceled', 'refunded'],
+    default: 'pending',
+    index: true
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['payhere', 'cod'],
+    default: 'payhere'
+  },
+  transactionId: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  payhereDetails: {
+    merchantId: String,
+    orderId: String,
+    statusCode: String,
+    statusMessage: String,
+    method: String,
+    cardHolderName: String,
+    cardNo: String,
+    md5sig: String,
+    paymentDate: Date
+  },
+  customerDetails: {
+    name: String,
+    email: String,
+    phone: String,
+    address: String,
+    city: String
+  },
+  hash: String,
+  notificationReceived: {
+    type: Boolean,
+    default: false
+  },
+  notificationReceivedAt: Date,
+  retryCount: {
+    type: Number,
+    default: 0
+  }
+}, {
+  timestamps: true
+});
 
-const Payment = mongoose.model("payment", payemtSchema);
+paymentSchema.index({ orderNumber: 1 });
+paymentSchema.index({ transactionId: 1 });
+paymentSchema.index({ createdAt: -1 });
+
+const Payment = mongoose.model("Payment", paymentSchema);
+
 export default Payment;
