@@ -61,13 +61,13 @@ export const placeOrder = asyncErrorHandler(async (req, res, next) => {
     }
   }
 
-  // Calculate totals (NO TAX)
+  // Calculate totals 
   const subtotal = cart.items.reduce((sum, item) => {
     return sum + item.price * item.quantity;
   }, 0);
 
   const shipping = shippingCost || 0;
-  const tax = 0; // No tax
+  
   const totalAmount = subtotal + shipping;
 
   // Create order items with weight
@@ -99,7 +99,6 @@ export const placeOrder = asyncErrorHandler(async (req, res, next) => {
     items: orderItems,
     subtotal,
     shippingCost: shipping,
-    tax: 0,
     totalAmount,
     paymentMethod,
     shippingMethod: shippingMethod || 'pickup',
