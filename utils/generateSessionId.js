@@ -1,19 +1,15 @@
-// Generate unique session ID for guest users
-export const generateSessionId = () => {
-  const timestamp = Date.now().toString(36);
-  const randomStr = Math.random().toString(36).substring(2, 15);
-  return `session_${timestamp}_${randomStr}`;
-};
+// utils/generateSessionId.js
 
-// Get or create session ID from request
 export const getOrCreateSessionId = (req) => {
-  // Check if session ID exists in cookies or headers
-  let sessionId = req.cookies?.sessionId || req.headers?.["x-session-id"];
-
-  // If no session ID, create new one
-  if (!sessionId) {
-    sessionId = generateSessionId();
+  // Try to get sessionId from header first (sent from frontend)
+  let sessionId = req.headers['x-session-id'];
+  
+  if (sessionId && sessionId !== 'null' && sessionId !== 'undefined') {
+    return sessionId;
   }
-
+  
+  // Generate new sessionId if none exists
+  sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
   return sessionId;
 };

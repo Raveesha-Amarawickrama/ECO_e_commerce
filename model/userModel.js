@@ -19,7 +19,7 @@ const userSchema= new mongoose.Schema({
         minlength:8,
         // select:false
     },
-    verified: { type: Boolean, default: true },
+    verified: { type: Boolean, default: false },
     isActive: {
         type: Boolean,
         default: true,

@@ -8,14 +8,15 @@ import crypto from "crypto";
 
 const singToken = (id, name) => {
   return jwt.sign({ id, name }, process.env.JWT_SECRET, {
-    expiresIn: "1hr",
+    expiresIn: "7d", // Changed from 1hr to 7 days
   });
 };
 
+// UPDATED: Register user with auto-login
 const registerUser = asyncErrorHandler(async (req, res, next) => {
   const { name, username, phoneNo, password, role } = req.body;
-  // console.log(username);
-  // check validation
+
+  // Check validation
   if (!name) {
     const error = new CustomError("Enter the user name", 404);
     return next(error);
@@ -24,34 +25,54 @@ const registerUser = asyncErrorHandler(async (req, res, next) => {
     const error = new CustomError("2", 404);
     return next(error);
   }
+
   const exits = await user.findOne({ username });
   if (exits) {
     const error = new CustomError("3", 404);
     return next(error);
   }
-  bcrypt.genSalt(10, function (err, salt) {
-    if (err) {
-      const error = new CustomError("Hash error", 404);
-      return next(error);
-    }
-    bcrypt.hash(password, salt, async function (err, hash) {
-      if (err) {
-        const error = new CustomError("Hash error", 404);
-        return next(error);
-      }
-      // Store hash in your password DB.
-      const userCreate = await user.create({
-        name,
-        username,
-        phoneNo,
-        password: hash,
-        role,
-      });
 
-      res.status(201).send({ message: "ok" });
-    });
+  // Hash password
+  const salt = await bcrypt.genSalt(10);
+  const hash = await bcrypt.hash(password, salt);
+
+  // Create the user with verified status
+  const userCreate = await user.create({
+    name,
+    username,
+    phoneNo,
+    password: hash,
+    role: role || "user",
+    verified: true, // Auto-verify user
+    isActive: true  // Set as active
   });
-  //create the user
+
+  // Auto-login: Generate token
+  const token = singToken(userCreate._id, userCreate.username);
+
+  // Set cookie
+  res.cookie("token", token, {
+    httpOnly: true,
+    path: "/",
+    expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    sameSite: "lax",
+  });
+
+  // Return user data without password
+  const newUser = {
+    _id: userCreate._id,
+    name: userCreate.name,
+    username: userCreate.username,
+    phoneNo: userCreate.phoneNo,
+    role: userCreate.role
+  };
+
+  res.status(201).json({
+    success: true,
+    message: "Registration successful",
+    token,
+    newUser
+  });
 });
 
 const verifyGmail = asyncErrorHandler(async (req, res, next) => {
@@ -68,43 +89,54 @@ const verifyGmail = asyncErrorHandler(async (req, res, next) => {
   }
 });
 
+// UPDATED: Login user - removed email verification check
 const loginUser = asyncErrorHandler(async (req, res, next) => {
   const { username, password } = req.body;
+
   const userFind = await user.findOne({ username });
   if (!userFind) {
     const error = new CustomError("Invalid Credentials", 404);
     return next(error);
   }
-  if (userFind && !userFind.verified) {
-    const error = new CustomError("verifiy your email", 404);
-    return next(error);
-  }
 
+  // REMOVED: Email verification check
+  // if (userFind && !userFind.verified) {
+  //   const error = new CustomError("verifiy your email", 404);
+  //   return next(error);
+  // }
+
+  // Check if account is active
   if (userFind && !userFind.isActive) {
     const error = new CustomError("Not Allowed to access", 404);
     return next(error);
   }
 
-  bcrypt.compare(password, userFind.password, async function (err, result) {
-    if (err) {
-      const error = new CustomError("Internal Server Error", 500);
-      return next(error);
-    }
-    if (result) {
-      const newUser = await user.findOne({ username }).select("-password");
-      const token = singToken(userFind._id, userFind.username);
-      res.cookie("token", token, {
-        httpOnly: true,
-        // domain: 'localhost',
-        path: "/",
-        expires: new Date(Date.now() + 1000 * 86400),
-        sameSite: "lax",
-      }),
-        res.status(200).json({ token, newUser });
-    } else {
-      const error = new CustomError("Invalid Credential", 500);
-      return next(error);
-    }
+  // Compare password
+  const isPasswordMatch = await bcrypt.compare(password, userFind.password);
+  
+  if (!isPasswordMatch) {
+    const error = new CustomError("Invalid Credential", 500);
+    return next(error);
+  }
+
+  // Get user without password
+  const newUser = await user.findOne({ username }).select("-password");
+  
+  // Generate token
+  const token = singToken(userFind._id, userFind.username);
+  
+  // Set cookie
+  res.cookie("token", token, {
+    httpOnly: true,
+    path: "/",
+    expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    sameSite: "lax",
+  });
+
+  res.status(200).json({ 
+    success: true,
+    token, 
+    newUser 
   });
 });
 
@@ -118,9 +150,11 @@ const getUser = asyncErrorHandler(async (req, res, next) => {
     const error = new CustomError("Login again..", 500);
     return next(error);
   }
+  
   if (!newuser) {
-    return res.status(404).json({ messsage: "User Not FOund" });
+    return res.status(404).json({ messsage: "User Not Found" });
   }
+  
   return res.status(200).json({ newuser });
 });
 
@@ -133,17 +167,9 @@ const logOutUser = asyncErrorHandler(async (req, res, next) => {
   res.cookie("token", "", {
     httpOnly: true,
     expires: new Date(0),
-  }),
-    res.status(200).json({ message: "log out" });
+  });
+  res.status(200).json({ message: "log out" });
 });
-export {
-  getUser,
-  registerUser,
-  loginUser,
-  getAllDetailsUser,
-  logOutUser,
-  verifyGmail,
-};
 
 const forgotPassword = asyncErrorHandler(async (req, res, next) => {
   const { email } = req.body;
@@ -161,7 +187,7 @@ const forgotPassword = asyncErrorHandler(async (req, res, next) => {
     .update(resetToken)
     .digest("hex");
 
-  // Save token to user (you need to add these fields to your schema)
+  // Save token to user
   userFind.resetPasswordToken = resetTokenHash;
   userFind.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
   await userFind.save();
@@ -235,4 +261,13 @@ const resetPassword = asyncErrorHandler(async (req, res, next) => {
   res.status(200).json({ message: "Password reset successful" });
 });
 
-export { forgotPassword, resetPassword };
+export {
+  getUser,
+  registerUser,
+  loginUser,
+  getAllDetailsUser,
+  logOutUser,
+  verifyGmail,
+  forgotPassword,
+  resetPassword
+};

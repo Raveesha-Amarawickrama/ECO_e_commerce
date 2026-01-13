@@ -4,7 +4,7 @@ import Cart from "../model/cartModel.js";
 import Product from "../model/productModel.js";
 import { getOrCreateSessionId } from "../utils/generateSessionId.js";
 
-// @desc    Add product to cart (Guest - No Auth)
+// @desc    Add product to cart (Works for both Guest and Authenticated users)
 // @route   POST /api/cart/add
 // @access  Public
 const addToCart = asyncErrorHandler(async (req, res, next) => {
@@ -16,10 +16,19 @@ const addToCart = asyncErrorHandler(async (req, res, next) => {
     return next(error);
   }
 
-  // Get or create session ID
+  const userId = req.user?.id || req.user?._id;
   const sessionId = getOrCreateSessionId(req);
 
-  // Verify product exists and get its details including weight
+  // IMPORTANT: Log to debug
+  console.log('Cart operation:', { userId, sessionId, hasUser: !!userId });
+
+  // Ensure we have at least one identifier
+  if (!userId && !sessionId) {
+    const error = new CustomError("Could not identify cart session", 400);
+    return next(error);
+  }
+
+  // Verify product exists and get its details
   const productData = await Product.findById(productId);
   if (!productData) {
     const error = new CustomError("Product not found", 404);
@@ -35,11 +44,30 @@ const addToCart = asyncErrorHandler(async (req, res, next) => {
     return next(error);
   }
 
-  // Find or create cart for session
-  let cart = await Cart.findOne({ sessionId });
-
-  if (!cart) {
-    cart = new Cart({ sessionId, items: [] });
+  // Find cart - IMPORTANT: Only search by the identifier that exists
+  let cart;
+  if (userId) {
+    // User is logged in - search by userId only
+    cart = await Cart.findOne({ userId });
+    
+    // Create new cart if none exists
+    if (!cart) {
+      cart = new Cart({ 
+        userId,
+        items: []
+      });
+    }
+  } else {
+    // Guest user - search by sessionId only
+    cart = await Cart.findOne({ sessionId });
+    
+    // Create new cart if none exists
+    if (!cart) {
+      cart = new Cart({ 
+        sessionId,
+        items: []
+      });
+    }
   }
 
   // Check if item already exists
@@ -73,7 +101,7 @@ const addToCart = asyncErrorHandler(async (req, res, next) => {
       mainImage: productData.mainImage,
       color: color || "",
       size: size || "",
-      weight: productData.weight || 0 // Include weight from product
+      weight: productData.weight || 0
     });
   }
 
@@ -88,13 +116,19 @@ const addToCart = asyncErrorHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Get cart items (Guest - No Auth)
+// @desc    Get cart items (Works for both Guest and Authenticated users)
 // @route   GET /api/cart
 // @access  Public
 const getCart = asyncErrorHandler(async (req, res, next) => {
+  const userId = req.user?.id || req.user?._id;
   const sessionId = getOrCreateSessionId(req);
 
-  const cart = await Cart.findOne({ sessionId });
+  let cart;
+  if (userId) {
+    cart = await Cart.findOne({ userId });
+  } else if (sessionId) {
+    cart = await Cart.findOne({ sessionId });
+  }
 
   if (!cart || cart.items.length === 0) {
     return res.status(200).json({
@@ -129,8 +163,15 @@ const updateCart = asyncErrorHandler(async (req, res, next) => {
     return next(error);
   }
 
+  const userId = req.user?.id || req.user?._id;
   const sessionId = getOrCreateSessionId(req);
-  const cart = await Cart.findOne({ sessionId });
+
+  let cart;
+  if (userId) {
+    cart = await Cart.findOne({ userId });
+  } else if (sessionId) {
+    cart = await Cart.findOne({ sessionId });
+  }
 
   if (!cart) {
     const error = new CustomError("Cart not found", 404);
@@ -177,8 +218,15 @@ const removeFromCart = asyncErrorHandler(async (req, res, next) => {
     return next(error);
   }
 
+  const userId = req.user?.id || req.user?._id;
   const sessionId = getOrCreateSessionId(req);
-  const cart = await Cart.findOne({ sessionId });
+
+  let cart;
+  if (userId) {
+    cart = await Cart.findOne({ userId });
+  } else if (sessionId) {
+    cart = await Cart.findOne({ sessionId });
+  }
 
   if (!cart) {
     const error = new CustomError("Cart not found", 404);
@@ -203,8 +251,15 @@ const removeFromCart = asyncErrorHandler(async (req, res, next) => {
 // @route   POST /api/cart/clear
 // @access  Public
 const clearCart = asyncErrorHandler(async (req, res, next) => {
+  const userId = req.user?.id || req.user?._id;
   const sessionId = getOrCreateSessionId(req);
-  const cart = await Cart.findOne({ sessionId });
+
+  let cart;
+  if (userId) {
+    cart = await Cart.findOne({ userId });
+  } else if (sessionId) {
+    cart = await Cart.findOne({ sessionId });
+  }
 
   if (!cart) {
     const error = new CustomError("Cart not found", 404);
@@ -225,8 +280,15 @@ const clearCart = asyncErrorHandler(async (req, res, next) => {
 // @route   GET /api/cart/count
 // @access  Public
 const getCartCount = asyncErrorHandler(async (req, res, next) => {
+  const userId = req.user?.id || req.user?._id;
   const sessionId = getOrCreateSessionId(req);
-  const cart = await Cart.findOne({ sessionId });
+
+  let cart;
+  if (userId) {
+    cart = await Cart.findOne({ userId });
+  } else if (sessionId) {
+    cart = await Cart.findOne({ sessionId });
+  }
 
   const count = cart ? cart.items.length : 0;
 
@@ -236,11 +298,89 @@ const getCartCount = asyncErrorHandler(async (req, res, next) => {
   });
 });
 
+// @desc    Sync guest cart to user cart after login
+// @route   POST /api/cart/sync
+// @access  Private (requires authentication)
+const syncCart = asyncErrorHandler(async (req, res, next) => {
+  const userId = req.user?.id || req.user?._id;
+  const sessionId = req.headers['x-session-id'];
+
+  if (!userId) {
+    const error = new CustomError("Authentication required", 401);
+    return next(error);
+  }
+
+  if (!sessionId) {
+    // No session cart to sync, just return user cart
+    const userCart = await Cart.findOne({ userId });
+    return res.status(200).json({
+      success: true,
+      cart: userCart ? userCart.items : [],
+      message: "No session cart to sync"
+    });
+  }
+
+  // Find session cart (guest cart)
+  const sessionCart = await Cart.findOne({ sessionId });
+
+  if (!sessionCart || sessionCart.items.length === 0) {
+    // No items in session cart, just return user cart
+    const userCart = await Cart.findOne({ userId });
+    return res.status(200).json({
+      success: true,
+      cart: userCart ? userCart.items : [],
+      message: "Session cart is empty"
+    });
+  }
+
+  // Find or create user cart
+  let userCart = await Cart.findOne({ userId });
+
+  if (!userCart) {
+    // Create new cart for user with session items
+    userCart = new Cart({
+      userId,
+      items: sessionCart.items
+    });
+    await userCart.save();
+  } else {
+    // Merge session cart into user cart
+    for (const sessionItem of sessionCart.items) {
+      const existingItemIndex = userCart.items.findIndex(
+        (item) =>
+          item.productId.toString() === sessionItem.productId.toString() &&
+          item.color === sessionItem.color &&
+          item.size === sessionItem.size
+      );
+
+      if (existingItemIndex > -1) {
+        // Update quantity if item exists
+        userCart.items[existingItemIndex].quantity += sessionItem.quantity;
+      } else {
+        // Add new item
+        userCart.items.push(sessionItem);
+      }
+    }
+    await userCart.save();
+  }
+
+  // Delete session cart after successful sync
+  await Cart.deleteOne({ sessionId });
+
+  res.status(200).json({
+    success: true,
+    cart: userCart.items,
+    cartCount: userCart.items.length,
+    message: "Cart synced successfully"
+  });
+});
+
 export {
   addToCart,
   getCart,
   updateCart,
   removeFromCart,
   clearCart,
-  getCartCount
+  getCartCount,
+  syncCart
 };

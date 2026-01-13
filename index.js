@@ -9,10 +9,11 @@ import userRouter from "./routes/userRouter.js";
 import productRouter from "./routes/productRouter.js";
 import billRouter from "./routes/billRouter.js";
 import cartRoutes from './routes/cartRoutes.js';
+import wishlistRoutes from './routes/wishlisRoutes.js'; 
 import orderRoutes from './routes/orderRoutes.js';
 import contactRoutes from './routes/contactRoutes.js'; 
 
-import authRouter from "./routes/auth.js";
+import authRouter from "./routes/authRoutes.js";
 import orderRouter from "./routes/orderRoutes.js";
 import countRouter from "./routes/countDetailsRouter.js";
 import feedbackRouter from "./routes/feedbackRouter.js";
@@ -35,11 +36,25 @@ const port = parseInt(process.env.PORT, 10) || 5000;
 app.use(json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Session middleware (required for Passport)
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-session-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false, // Set to true in production with HTTPS
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
 const allowedOrigins = [
   "http://localhost:5173", 
   process.env.BASE_URL, 
   process.env.BASE_URL_TWO, 
-  process.env.DASH_URL
+  process.env.DASH_URL,
+  process.env.ADMIN_DASH_URL,
+  'http://localhost:3001'
 ].filter(Boolean);
 
 app.use(
@@ -79,16 +94,26 @@ app.get("/api/health", (req, res) => {
   res.status(200).json({ success: true, message: "Server is running" });
 });
 
+// User & Auth Routes
 app.use("/user", userRouter);
-app.use("/products", productRouter);
-app.use("/bill", billRouter);
 app.use("/auth", authRouter);
-app.use("/order", orderRouter);
+
+// Product Routes
+app.use("/products", productRouter);
+
+// Shopping Routes
 app.use("/cart", cartRoutes);
+app.use("/wishlist", wishlistRoutes); 
+
+// Order & Billing Routes
+app.use("/bill", billRouter);
+app.use("/order", orderRouter);
 app.use("/checkout", orderRoutes);
+
+// Other Routes
 app.use("/feedback", feedbackRouter);
 app.use("/dashboard", countRouter);
-app.use("/contact", contactRoutes); // Use contact routes without /api
+app.use("/contact", contactRoutes);
 
 // =====================
 // ERROR HANDLING
@@ -121,6 +146,7 @@ mongoose
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
   console.log(`Allowed Origins: ${allowedOrigins.join(", ")}`);
-  console.log(`Cart routes available at: http://localhost:${port}/api/cart`);
-  console.log(`Contact routes available at: http://localhost:${port}/contact`);
+  console.log(`📦 Cart routes: http://localhost:${port}/cart`);
+  console.log(`❤️  Wishlist routes: http://localhost:${port}/wishlist`); // ✅ ADD THIS
+  console.log(`📧 Contact routes: http://localhost:${port}/contact`);
 });

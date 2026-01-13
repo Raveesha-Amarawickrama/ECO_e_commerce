@@ -5,29 +5,36 @@ import {
   updateCart,
   removeFromCart,
   clearCart,
-  getCartCount
+  getCartCount,
+  syncCart
 } from "../controller/cartController.js";
+import { protect } from "../middleware/authMiddleware.js";
 
 const router = Router();
 
-// All routes are public (No authentication required)
+// Public routes (work for both guest and authenticated users)
+// These routes check if user is authenticated and use userId if available
 
 // GET - Get cart items
-router.get("/", getCart);
+router.get("/", protect, getCart); // protect is optional - allows both authenticated and guest
 
 // GET - Get cart count
-router.get("/count", getCartCount);
+router.get("/count", protect, getCartCount);
 
 // POST - Add to cart
-router.post("/add", addToCart);
+router.post("/add", protect, addToCart);
 
 // POST - Update quantity
-router.post("/update", updateCart);
+router.post("/update", protect, updateCart);
 
 // POST - Remove from cart
-router.post("/remove", removeFromCart);
+router.post("/remove", protect, removeFromCart);
 
 // POST - Clear cart
-router.post("/clear", clearCart);
+router.post("/clear", protect, clearCart);
+
+// Protected route (requires authentication)
+// POST - Sync guest cart to user cart after login
+router.post("/sync", protect, syncCart);
 
 export default router;
