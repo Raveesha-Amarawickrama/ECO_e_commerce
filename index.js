@@ -101,7 +101,7 @@ app.use("/wishlist", wishlistRoutes);
 
 // Order & Billing Routes
 app.use("/bill", billRouter);
-app.use("/order", orderRouteres);
+app.use("/order", orderRoutes);
 
 
 // Other Routes
