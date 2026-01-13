@@ -17,6 +17,7 @@ import authRouter from "./routes/authRoutes.js";
 import orderRouter from "./routes/orderRoutes.js";
 import countRouter from "./routes/countDetailsRouter.js";
 import feedbackRouter from "./routes/feedbackRouter.js";
+       
 import { CustomError } from "./utils/customerError.js";
 import globalErrorHandler from "./controller/errorController.js";
 import cors from "cors";
@@ -54,7 +55,8 @@ const allowedOrigins = [
   process.env.BASE_URL_TWO, 
   process.env.DASH_URL,
   process.env.ADMIN_DASH_URL,
-  'http://localhost:3001'
+  'http://localhost:3001',
+  'http://localhost:3000'
 ].filter(Boolean);
 
 app.use(
@@ -63,14 +65,6 @@ app.use(
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", 'x-session-id']
-  })
-);
-
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || "your-secret-key",
-    resave: false,
-    saveUninitialized: false,
   })
 );
 
@@ -107,8 +101,8 @@ app.use("/wishlist", wishlistRoutes);
 
 // Order & Billing Routes
 app.use("/bill", billRouter);
-app.use("/order", orderRouter);
-app.use("/checkout", orderRoutes);
+app.use("/order", orderRouteres);
+
 
 // Other Routes
 app.use("/feedback", feedbackRouter);
@@ -147,6 +141,6 @@ app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
   console.log(`Allowed Origins: ${allowedOrigins.join(", ")}`);
   console.log(`📦 Cart routes: http://localhost:${port}/cart`);
-  console.log(`❤️  Wishlist routes: http://localhost:${port}/wishlist`); // ✅ ADD THIS
+  console.log(`❤️  Wishlist routes: http://localhost:${port}/wishlist`);
   console.log(`📧 Contact routes: http://localhost:${port}/contact`);
 });

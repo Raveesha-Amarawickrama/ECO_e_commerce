@@ -1,26 +1,52 @@
 import { Router } from "express";
 import {
+  getUser,
   registerUser,
   loginUser,
   getAllDetailsUser,
   logOutUser,
-  getUser,
   verifyGmail,
+  forgotPassword,
+  resetPassword,
+  getUserCart,
+  addToCart,
+  removeFromCart,
+  updateCartQuantity,
+  clearCart,
+  mergeCart,
 } from "../controller/userController.js";
-import { forgotPassword, resetPassword } from "../controller/userController.js";
 import { protect } from "../middleware/authMiddleware.js";
+
 const router = Router();
 
+// ========================================
+// AUTHENTICATION ROUTES
+// ========================================
 router.route("/register").post(registerUser);
 router.route("/login").post(loginUser);
-router.route("/getAllDetails").get(protect,getAllDetailsUser);
-router.route("/logout").get(logOutUser);
-router.route("/getuser").get(protect,getUser);
-router.route("/:id/verify/:token").get(verifyGmail)
+router.route("/logout").post(logOutUser);
+router.route("/verify/:token").get(verifyGmail);
+
+// ========================================
+// PASSWORD RESET ROUTES
+// ========================================
 router.route("/forgot-password").post(forgotPassword);
 router.route("/reset-password/:token").post(resetPassword);
 
+// ========================================
+// USER ROUTES
+// ========================================
+router.route("/getUser").get(protect, getUser);
+router.route("/getAllUsers").get(protect, getAllDetailsUser);
+
+// ========================================
+// CART ROUTES
+// ========================================
+router.route("/:userId/cart").get(protect, getUserCart);
+router.route("/:userId/cart").post(protect, addToCart);
+router.route("/:userId/cart").delete(protect, clearCart);
+router.route("/:userId/cart/merge").post(protect, mergeCart);
+router.route("/:userId/cart/:itemId").delete(protect, removeFromCart);
+router.route("/:userId/cart/:itemId").put(protect, updateCartQuantity);
 
 export default router;
-
-

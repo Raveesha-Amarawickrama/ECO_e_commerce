@@ -8,70 +8,73 @@ import crypto from "crypto";
 
 const singToken = (id, name) => {
   return jwt.sign({ id, name }, process.env.JWT_SECRET, {
-    expiresIn: "7d", // Changed from 1hr to 7 days
+    expiresIn: "1hr",
   });
 };
 
-// UPDATED: Register user with auto-login
 const registerUser = asyncErrorHandler(async (req, res, next) => {
   const { name, username, phoneNo, password, role } = req.body;
-
+  
   // Check validation
   if (!name) {
-    const error = new CustomError("Enter the user name", 404);
+    const error = new CustomError("Enter the user name", 400);
     return next(error);
   }
   if (!password || password.length < 8) {
-    const error = new CustomError("2", 404);
+    const error = new CustomError("Password must be at least 8 characters long", 400);
     return next(error);
   }
-
+  
+  // Check if user already exists
   const exits = await user.findOne({ username });
   if (exits) {
-    const error = new CustomError("3", 404);
+    const error = new CustomError("User already exists. Please use a different email.", 409);
     return next(error);
   }
+  
+  bcrypt.genSalt(10, function (err, salt) {
+    if (err) {
+      const error = new CustomError("Hash error", 500);
+      return next(error);
+    }
+    bcrypt.hash(password, salt, async function (err, hash) {
+      if (err) {
+        const error = new CustomError("Hash error", 500);
+        return next(error);
+      }
+      
+      // Create new user
+      const userCreate = await user.create({
+        name,
+        username,
+        phoneNo,
+        password: hash,
+        role: role || 'user',
+        verified: true,     // Allow immediate login
+        isActive: true,     // Ensure user is active
+      });
 
-  // Hash password
-  const salt = await bcrypt.genSalt(10);
-  const hash = await bcrypt.hash(password, salt);
+      // Generate JWT token
+      const token = singToken(userCreate._id, userCreate.username);
 
-  // Create the user with verified status
-  const userCreate = await user.create({
-    name,
-    username,
-    phoneNo,
-    password: hash,
-    role: role || "user",
-    verified: true, // Auto-verify user
-    isActive: true  // Set as active
-  });
+      // Get user without password
+      const newUser = await user.findById(userCreate._id).select("-password");
 
-  // Auto-login: Generate token
-  const token = singToken(userCreate._id, userCreate.username);
+      // Set cookie
+      res.cookie("token", token, {
+        httpOnly: true,
+        path: "/",
+        expires: new Date(Date.now() + 1000 * 86400),
+        sameSite: "lax",
+      });
 
-  // Set cookie
-  res.cookie("token", token, {
-    httpOnly: true,
-    path: "/",
-    expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-    sameSite: "lax",
-  });
-
-  // Return user data without password
-  const newUser = {
-    _id: userCreate._id,
-    name: userCreate.name,
-    username: userCreate.username,
-    phoneNo: userCreate.phoneNo,
-    role: userCreate.role
-  };
-
-  res.status(201).json({
-    success: true,
-    message: "Registration successful",
-    token,
-    newUser
+      // Return user and token (matching login response format)
+      res.status(201).json({ 
+        token,
+        newUser,
+        message: "Account created successfully" 
+      });
+    });
   });
 });
 
@@ -89,54 +92,53 @@ const verifyGmail = asyncErrorHandler(async (req, res, next) => {
   }
 });
 
-// UPDATED: Login user - removed email verification check
 const loginUser = asyncErrorHandler(async (req, res, next) => {
   const { username, password } = req.body;
+  
+  // ✅ Check if username and password are provided
+  if (!username || !password) {
+    const error = new CustomError("Please provide email and password", 400);
+    return next(error);
+  }
 
   const userFind = await user.findOne({ username });
+  
   if (!userFind) {
     const error = new CustomError("Invalid Credentials", 404);
     return next(error);
   }
+  
+  // ✅ Check if user is verified
+  if (userFind && !userFind.verified) {
+    const error = new CustomError("Please verify your email", 404);
+    return next(error);
+  }
 
-  // REMOVED: Email verification check
-  // if (userFind && !userFind.verified) {
-  //   const error = new CustomError("verifiy your email", 404);
-  //   return next(error);
-  // }
-
-  // Check if account is active
+  // ✅ Check if user is active
   if (userFind && !userFind.isActive) {
     const error = new CustomError("Not Allowed to access", 404);
     return next(error);
   }
 
-  // Compare password
-  const isPasswordMatch = await bcrypt.compare(password, userFind.password);
-  
-  if (!isPasswordMatch) {
-    const error = new CustomError("Invalid Credential", 500);
-    return next(error);
-  }
-
-  // Get user without password
-  const newUser = await user.findOne({ username }).select("-password");
-  
-  // Generate token
-  const token = singToken(userFind._id, userFind.username);
-  
-  // Set cookie
-  res.cookie("token", token, {
-    httpOnly: true,
-    path: "/",
-    expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-    sameSite: "lax",
-  });
-
-  res.status(200).json({ 
-    success: true,
-    token, 
-    newUser 
+  bcrypt.compare(password, userFind.password, async function (err, result) {
+    if (err) {
+      const error = new CustomError("Internal Server Error", 500);
+      return next(error);
+    }
+    if (result) {
+      const newUser = await user.findOne({ username }).select("-password");
+      const token = singToken(userFind._id, userFind.username);
+      res.cookie("token", token, {
+        httpOnly: true,
+        path: "/",
+        expires: new Date(Date.now() + 1000 * 86400),
+        sameSite: "lax",
+      });
+      res.status(200).json({ token, newUser });
+    } else {
+      const error = new CustomError("Invalid Credentials", 401);
+      return next(error);
+    }
   });
 });
 
@@ -171,96 +173,360 @@ const logOutUser = asyncErrorHandler(async (req, res, next) => {
   res.status(200).json({ message: "log out" });
 });
 
+// ========================================
+// PASSWORD RESET FUNCTIONS
+// ========================================
+
+// Forgot Password - Send reset email
 const forgotPassword = asyncErrorHandler(async (req, res, next) => {
   const { email } = req.body;
 
-  const userFind = await user.findOne({ username: email });
-  if (!userFind) {
-    const error = new CustomError("User not found", 404);
+  if (!email) {
+    const error = new CustomError("Please provide your email", 400);
+    return next(error);
+  }
+
+  // Find user by email (username)
+  const userDoc = await user.findOne({ username: email });
+
+  if (!userDoc) {
+    const error = new CustomError("No user found with this email", 404);
     return next(error);
   }
 
   // Generate reset token
   const resetToken = crypto.randomBytes(32).toString("hex");
-  const resetTokenHash = crypto
+
+  // Hash token before saving to database
+  const hashedToken = crypto
     .createHash("sha256")
     .update(resetToken)
     .digest("hex");
 
-  // Save token to user
-  userFind.resetPasswordToken = resetTokenHash;
-  userFind.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
-  await userFind.save();
+  // Save hashed token and expiry to user
+  userDoc.resetPasswordToken = hashedToken;
+  userDoc.resetPasswordExpires = Date.now() + 3600000; // 1 hour from now
+
+  await userDoc.save();
 
   // Create reset URL
-  const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
   // Email message
   const message = `
-    <h1>You requested a password reset</h1>
-    <p>Please click the link below to reset your password:</p>
-    <a href="${resetUrl}" clicktracking=off>${resetUrl}</a>
-    <p>This link will expire in 10 minutes.</p>
+    <h2>Password Reset Request</h2>
+    <p>Hello ${userDoc.name},</p>
+    <p>You requested to reset your password. Please click the link below to reset your password:</p>
+    <a href="${resetUrl}" style="display: inline-block; padding: 10px 20px; background-color: #2a9d8f; color: white; text-decoration: none; border-radius: 5px;">Reset Password</a>
+    <p>This link will expire in 1 hour.</p>
+    <p>If you didn't request this, please ignore this email.</p>
+    <br>
+    <p>Best regards,<br>House of Cambridge Team</p>
   `;
 
   try {
     await sendEmail({
-      to: userFind.username,
+      email: userDoc.username,
       subject: "Password Reset Request",
-      html: message,
+      message,
     });
 
-    res.status(200).json({ message: "Email sent successfully" });
-  } catch (err) {
-    userFind.resetPasswordToken = undefined;
-    userFind.resetPasswordExpire = undefined;
-    await userFind.save();
+    res.status(200).json({
+      success: true,
+      message: "Password reset link sent to your email",
+    });
+  } catch (error) {
+    // Clear reset token if email fails
+    userDoc.resetPasswordToken = undefined;
+    userDoc.resetPasswordExpires = undefined;
+    await userDoc.save();
 
-    const error = new CustomError("Email could not be sent", 500);
-    return next(error);
+    const err = new CustomError("Error sending email. Please try again later.", 500);
+    return next(err);
   }
 });
 
+// Reset Password - Update password with token
 const resetPassword = asyncErrorHandler(async (req, res, next) => {
   const { token } = req.params;
-  const { password } = req.body;
+  const { password, confirmPassword } = req.body;
+
+  // Validate passwords
+  if (!password || !confirmPassword) {
+    const error = new CustomError("Please provide password and confirm password", 400);
+    return next(error);
+  }
+
+  if (password !== confirmPassword) {
+    const error = new CustomError("Passwords do not match", 400);
+    return next(error);
+  }
+
+  if (password.length < 8) {
+    const error = new CustomError("Password must be at least 8 characters long", 400);
+    return next(error);
+  }
 
   // Hash the token from URL
-  const resetTokenHash = crypto
+  const hashedToken = crypto
     .createHash("sha256")
     .update(token)
     .digest("hex");
 
-  // Find user with valid token
-  const userFind = await user.findOne({
-    resetPasswordToken: resetTokenHash,
-    resetPasswordExpire: { $gt: Date.now() },
+  // Find user with valid token and not expired
+  const userDoc = await user.findOne({
+    resetPasswordToken: hashedToken,
+    resetPasswordExpires: { $gt: Date.now() },
   });
 
-  if (!userFind) {
-    const error = new CustomError("Invalid or expired token", 400);
-    return next(error);
-  }
-
-  // Validate password
-  if (!password || password.length < 8) {
-    const error = new CustomError("Password must be at least 8 characters", 400);
+  if (!userDoc) {
+    const error = new CustomError("Invalid or expired reset token", 400);
     return next(error);
   }
 
   // Hash new password
-  const salt = await bcrypt.genSalt(10);
-  const hash = await bcrypt.hash(password, salt);
+  bcrypt.genSalt(10, function (err, salt) {
+    if (err) {
+      const error = new CustomError("Error processing password", 500);
+      return next(error);
+    }
+    
+    bcrypt.hash(password, salt, async function (err, hash) {
+      if (err) {
+        const error = new CustomError("Error processing password", 500);
+        return next(error);
+      }
 
-  // Update user
-  userFind.password = hash;
-  userFind.resetPasswordToken = undefined;
-  userFind.resetPasswordExpire = undefined;
-  await userFind.save();
+      // Update password and clear reset token
+      userDoc.password = hash;
+      userDoc.resetPasswordToken = undefined;
+      userDoc.resetPasswordExpires = undefined;
 
-  res.status(200).json({ message: "Password reset successful" });
+      await userDoc.save();
+
+      // Send confirmation email
+      const message = `
+        <h2>Password Reset Successful</h2>
+        <p>Hello ${userDoc.name},</p>
+        <p>Your password has been successfully reset.</p>
+        <p>If you did not make this change, please contact us immediately.</p>
+        <br>
+        <p>Best regards,<br>House of Cambridge Team</p>
+      `;
+
+      try {
+        await sendEmail({
+          email: userDoc.username,
+          subject: "Password Reset Successful",
+          message,
+        });
+      } catch (emailError) {
+        console.error("Error sending confirmation email:", emailError);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Password reset successful. You can now login with your new password.",
+      });
+    });
+  });
 });
 
+// ========================================
+// CART FUNCTIONS
+// ========================================
+
+// Get user's cart
+const getUserCart = asyncErrorHandler(async (req, res, next) => {
+  const userId = req.params.userId;
+  
+  const userWithCart = await user
+    .findById(userId)
+    .populate({
+      path: 'cart.productId',
+      select: 'productName price mainImage item_count weight description',
+    })
+    .select('cart');
+
+  if (!userWithCart) {
+    const error = new CustomError("User not found", 404);
+    return next(error);
+  }
+
+  // Transform cart to match frontend expectations
+  const cart = userWithCart.cart.map(item => ({
+    _id: item.productId._id,
+    name: item.productId.productName,
+    price: item.productId.price,
+    pic: item.productId.mainImage,
+    quantity: item.quantity,
+    ct: item.productId.item_count,
+    weight: item.productId.weight,
+    description: item.productId.description,
+  }));
+
+  res.status(200).json({ cart });
+});
+
+// Add item to cart
+const addToCart = asyncErrorHandler(async (req, res, next) => {
+  const userId = req.params.userId;
+  const { productId, quantity = 1 } = req.body;
+
+  const userDoc = await user.findById(userId);
+  
+  if (!userDoc) {
+    const error = new CustomError("User not found", 404);
+    return next(error);
+  }
+
+  // Check if product already exists in cart
+  const existingItemIndex = userDoc.cart.findIndex(
+    item => item.productId.toString() === productId
+  );
+
+  if (existingItemIndex > -1) {
+    // Update quantity if item exists
+    userDoc.cart[existingItemIndex].quantity += quantity;
+  } else {
+    // Add new item to cart
+    userDoc.cart.push({
+      productId,
+      quantity,
+    });
+  }
+
+  await userDoc.save();
+
+  res.status(200).json({ 
+    message: "Item added to cart successfully",
+    cart: userDoc.cart 
+  });
+});
+
+// Remove item from cart
+const removeFromCart = asyncErrorHandler(async (req, res, next) => {
+  const userId = req.params.userId;
+  const itemId = req.params.itemId;
+
+  const userDoc = await user.findById(userId);
+  
+  if (!userDoc) {
+    const error = new CustomError("User not found", 404);
+    return next(error);
+  }
+
+  // Remove item from cart
+  userDoc.cart = userDoc.cart.filter(
+    item => item.productId.toString() !== itemId
+  );
+
+  await userDoc.save();
+
+  res.status(200).json({ 
+    message: "Item removed from cart successfully",
+    cart: userDoc.cart 
+  });
+});
+
+// Update cart item quantity
+const updateCartQuantity = asyncErrorHandler(async (req, res, next) => {
+  const userId = req.params.userId;
+  const itemId = req.params.itemId;
+  const { quantity } = req.body;
+
+  if (!quantity || quantity < 1) {
+    const error = new CustomError("Invalid quantity", 400);
+    return next(error);
+  }
+
+  const userDoc = await user.findById(userId);
+  
+  if (!userDoc) {
+    const error = new CustomError("User not found", 404);
+    return next(error);
+  }
+
+  // Find and update the item
+  const itemIndex = userDoc.cart.findIndex(
+    item => item.productId.toString() === itemId
+  );
+
+  if (itemIndex === -1) {
+    const error = new CustomError("Item not found in cart", 404);
+    return next(error);
+  }
+
+  userDoc.cart[itemIndex].quantity = quantity;
+  await userDoc.save();
+
+  res.status(200).json({ 
+    message: "Cart updated successfully",
+    cart: userDoc.cart 
+  });
+});
+
+// Clear entire cart
+const clearCart = asyncErrorHandler(async (req, res, next) => {
+  const userId = req.params.userId;
+
+  const userDoc = await user.findById(userId);
+  
+  if (!userDoc) {
+    const error = new CustomError("User not found", 404);
+    return next(error);
+  }
+
+  userDoc.cart = [];
+  await userDoc.save();
+
+  res.status(200).json({ 
+    message: "Cart cleared successfully",
+    cart: [] 
+  });
+});
+
+// Merge guest cart with user cart (on login)
+const mergeCart = asyncErrorHandler(async (req, res, next) => {
+  const userId = req.params.userId;
+  const { items } = req.body; // Guest cart items
+
+  const userDoc = await user.findById(userId);
+  
+  if (!userDoc) {
+    const error = new CustomError("User not found", 404);
+    return next(error);
+  }
+
+  // Merge guest cart items
+  items.forEach(guestItem => {
+    const existingItemIndex = userDoc.cart.findIndex(
+      item => item.productId.toString() === guestItem._id
+    );
+
+    if (existingItemIndex > -1) {
+      // Add quantities if item exists
+      userDoc.cart[existingItemIndex].quantity += guestItem.quantity || 1;
+    } else {
+      // Add new item
+      userDoc.cart.push({
+        productId: guestItem._id,
+        quantity: guestItem.quantity || 1,
+      });
+    }
+  });
+
+  await userDoc.save();
+
+  res.status(200).json({ 
+    message: "Carts merged successfully",
+    cart: userDoc.cart 
+  });
+});
+
+// ========================================
+// EXPORTS - ONLY ONE EXPORT BLOCK
+// ========================================
 export {
   getUser,
   registerUser,
@@ -269,5 +535,11 @@ export {
   logOutUser,
   verifyGmail,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  getUserCart,
+  addToCart,
+  removeFromCart,
+  updateCartQuantity,
+  clearCart,
+  mergeCart,
 };
