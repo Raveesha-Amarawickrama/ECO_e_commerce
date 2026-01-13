@@ -1,242 +1,220 @@
-import Payment from "../model/paymentModel.js";
 import asyncErrorHandler from "../utils/asyncErrorHandler.js";
-import md5 from "crypto-js/md5.js";
+import { CustomError } from "../utils/customerError.js";
+import Order from "../model/orderModel.js";
+import Payment from "../model/paymentModel.js";
+import Product from "../model/productModel.js";
+import { getOrCreateSessionId } from "../utils/generateSessionId.js";
 
-const addOrder = asyncErrorHandler(async (req, res, next) => {
+// @desc    Place a new order (guest checkout)
+// @route   POST /order/checkout
+// @access  Public
+export const placeOrder = asyncErrorHandler(async (req, res, next) => {
   console.log("📥 Received order request");
-  console.log("Body:", req.body);
-  console.log("User from auth:", req.user?._id);
   
-  const { user, items, total, billDetails } = req.body;
-  
+  const {
+    customerName,
+    customerEmail,
+    customerPhone,
+    address,
+    city,
+    state,
+    zipCode,
+    country,
+    items,
+    subtotal,
+    shippingCost,
+    tax,
+    totalAmount,
+    paymentMethod,
+    shippingMethod,
+    town,
+    orderNotes
+  } = req.body;
+
   // Validation
-  if (!user || !items || !total || !billDetails) {
-    console.error("❌ Missing required fields");
-    return res.status(400).json({ 
-      message: "Missing required fields",
-      received: { 
-        user: !!user, 
-        items: !!items, 
-        total: !!total, 
-        billDetails: !!billDetails 
-      }
-    });
-  }
-  
-  if (!Array.isArray(items) || items.length === 0) {
-    console.error("❌ Invalid items array");
-    return res.status(400).json({ message: "Cart is empty or invalid" });
+  if (!customerName || !customerEmail || !customerPhone || !address || !city || !totalAmount || !items || items.length === 0) {
+    const error = new CustomError("Missing required order information", 400);
+    return next(error);
   }
 
-  if (!Array.isArray(billDetails) || billDetails.length === 0) {
-    console.error("❌ Invalid bill details");
-    return res.status(400).json({ message: "Billing information is required" });
-  }
+  // Get or create session ID
+  const sessionId = getOrCreateSessionId(req);
 
-  // Check delivery option
-  const deliveryOption = billDetails[0]?.deliveryOption || "pickup";
-  console.log("📦 Delivery Option:", deliveryOption);
-  
-  try {
-    console.log("💾 Creating order in database...");
-    
-    // Set status based on delivery option
-    // Status 1 = Paid (for pickup - no payment needed)
-    // Status 1 = Pending (for delivery - awaiting payment)
-    const orderStatus = deliveryOption === "pickup" ? 1 : 1; // Both start as status 1
-    
-    const newOrder = await Payment.create({ 
-      user, 
-      items, 
-      total, 
-      billDetails,
-      status: orderStatus,
-      createdAt: new Date()
-    });
-    
-    console.log("✅ Order created successfully:", newOrder._id);
-    console.log("📦 Order Status:", orderStatus, deliveryOption === "pickup" ? "(Pickup - No payment needed)" : "(Delivery - Payment pending)");
-    
-    return res.status(201).json({ 
-      success: true,
-      message: deliveryOption === "pickup" 
-        ? "Order placed successfully! Please pick up at our office." 
-        : "Order created. Redirecting to payment...",
-      orderId: newOrder._id,
-      deliveryOption: deliveryOption,
-      requiresPayment: deliveryOption === "deliver"
-    });
-  } catch (error) {
-    console.error("❌ Error creating order:", error);
-    return res.status(500).json({ 
-      message: "Failed to create order",
-      error: error.message 
-    });
-  }
-});
-
-const payhereNotify = asyncErrorHandler(async (req, res, next) => {
-  console.log("💳 PayHere Notification Received");
-  console.log("Payment Details:", req.body);
-  
-  const paymentDetails = req.body;
-  const merchantSecret = process.env.MERCHANT_SECRET;
-  const merchantId = paymentDetails.merchant_id;
-  const orderId = paymentDetails.order_id;
-  const amount = parseFloat(paymentDetails.payhere_amount)
-    .toLocaleString("en-us", { minimumFractionDigits: 2 })
-    .replace(",", "");
-  const currency = paymentDetails.payhere_currency;
-  const statusCode = paymentDetails.status_code;
-
-  // Create the hash to verify the integrity
-  const hashedSecret = md5(merchantSecret).toString().toUpperCase();
-  const hashString = `${merchantId}${orderId}${amount}${currency}${statusCode}${hashedSecret}`;
-  const calculatedHash = md5(hashString).toString().toUpperCase();
-
-  console.log("🔐 Hash Verification:", {
-    received: paymentDetails.md5sig,
-    calculated: calculatedHash,
-    match: calculatedHash === paymentDetails.md5sig
+  // Create order
+  const order = await Order.create({
+    customerName,
+    customerEmail,
+    customerPhone,
+    address,
+    city,
+    state: state || "",
+    zipCode: zipCode || "",
+    country: country || "Sri Lanka",
+    items,
+    subtotal: subtotal || 0,
+    shippingCost: shippingCost || 0,
+    tax: tax || 0,
+    totalAmount,
+    paymentMethod: paymentMethod || "cod",
+    shippingMethod: shippingMethod || "pickup",
+    town: town || "",
+    orderNotes: orderNotes || "",
+    sessionId,
+    orderStatus: "pending",
+    paymentStatus: paymentMethod === "cod" ? "unpaid" : "unpaid"
   });
 
-  if (calculatedHash === paymentDetails.md5sig) {
-    console.log("✅ Payment verified successfully");
-    console.log("💰 Status Code:", statusCode);
+  console.log("✅ Order created:", order.orderNumber);
+
+ // Replace the res.status(201).json in your placeOrder function with this:
+
+res.status(201).json({
+  success: true,
+  message: "Order placed successfully",
+  order: {
+    orderNumber: order.orderNumber,
+    totalAmount: order.totalAmount,
+    paymentMethod: order.paymentMethod,
+    orderStatus: order.orderStatus,
+    paymentStatus: order.paymentStatus,
     
-    // Status code 2 means successful payment
-    if (statusCode === "2" || statusCode === 2) {
-      // Update order status to "In Progress" (status 2) or "Complete" (status 3)
-      // You can add logic here to update the order in your database
-      console.log("✅ Payment successful for order:", orderId);
-      
-      // TODO: Update order status in database
-      // await Payment.findOneAndUpdate(
-      //   { /* find order by payhere order_id */ },
-      //   { status: 2 } // Or 3 for complete
-      // );
-    }
-    
-    res.status(200).json({ 
-      success: true, 
-      message: "Payment verified and processed" 
-    });
-  } else {
-    console.error("❌ Payment verification failed - Hash mismatch");
-    res.status(400).json({
-      success: false,
-      message: "Payment verification failed"
-    });
+    customerName: order.customerName,
+    customerEmail: order.customerEmail,
+    customerPhone: order.customerPhone,
+    address: order.address,
+    city: order.city,
+   
+    items: order.items
   }
 });
-
-const getOrderWithProductDetails = asyncErrorHandler(async (req, res, next) => {
-  console.log("📋 Fetching all orders with product details");
-  
-  const orders = await Payment.find({})
-    .sort({ createdAt: -1 })
-    .populate("user", "-password")
-    .populate({
-      path: "items.product",
-      model: "product",
-      populate: [
-        { path: "categoryId", model: "category" },
-        { path: "brandId", model: "brand" },
-      ],
-    });
-
-  console.log(`✅ Found ${orders.length} orders`);
-  return res.json(orders);
 });
 
-const getOneDetails = asyncErrorHandler(async (req, res, next) => {
-  const orderId = req.params.id;
-  console.log("🔍 Fetching order details for:", orderId);
-  
-  const details = await Payment.findById(orderId).populate({
-    path: "items.product",
-    model: "product",
+// @desc    Get order details by order number
+// @route   GET /order/:orderNumber
+// @access  Public
+export const getOrderDetails = asyncErrorHandler(async (req, res, next) => {
+  const { orderNumber } = req.params;
+
+  const order = await Order.findOne({ orderNumber });
+
+  if (!order) {
+    const error = new CustomError("Order not found", 404);
+    return next(error);
+  }
+
+  res.status(200).json({
+    success: true,
+    order
   });
-
-  if (!details) {
-    return res.status(404).json({ message: "Order not found" });
-  }
-
-  console.log("✅ Order details found");
-  res.json(details);
 });
 
-const getOrdersByUser = asyncErrorHandler(async (req, res, next) => {
-  const userId = req.params.userId;
-  console.log("👤 Fetching orders for user:", userId);
-  
-  const userOrders = await Payment.find({ user: userId })
+// @desc    Get orders by session ID
+// @route   GET /order/session/:sessionId
+// @access  Public
+export const getOrdersBySession = asyncErrorHandler(async (req, res, next) => {
+  const { sessionId } = req.params;
+
+  const orders = await Order.find({ sessionId })
+    .sort({ createdAt: -1 });
+
+  res.status(200).json({
+    success: true,
+    count: orders.length,
+    orders
+  });
+});
+
+// @desc    Get all orders (Admin)
+// @route   GET /order/admin/all
+// @access  Private/Admin
+export const getAllOrders = asyncErrorHandler(async (req, res, next) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 20;
+  const skip = (page - 1) * limit;
+
+  const orders = await Order.find()
     .sort({ createdAt: -1 })
-    .populate({
-      path: "items.product",
-      model: "product",
-    });
+    .skip(skip)
+    .limit(limit);
 
-  if (!userOrders || userOrders.length === 0) {
-    console.log("📭 No orders found for user");
-    return res.json([]);
-  }
+  const total = await Order.countDocuments();
 
-  console.log(`✅ Found ${userOrders.length} orders for user`);
-  res.json(userOrders);
+  res.status(200).json({
+    success: true,
+    orders,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit)
+    }
+  });
 });
 
-const updateStatus = asyncErrorHandler(async (req, res, next) => {
-  const orderId = req.params.id;
-  console.log("🔄 Updating order status for:", orderId);
+// @desc    Update order status
+// @route   PUT /order/:orderNumber/status
+// @access  Private/Admin
+export const updateOrderStatus = asyncErrorHandler(async (req, res, next) => {
+  const { orderNumber } = req.params;
+  const { orderStatus } = req.body;
+
+  const validStatuses = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"];
   
-  try {
-    const paymentDetails = await Payment.findById(orderId);
-    if (!paymentDetails) {
-      return res.status(404).json({ message: "Payment details not found" });
-    }
-    
-    const status = paymentDetails.status;
-    let newStatus;
-    let statusMessage;
-
-    switch (status) {
-      case 1:
-        newStatus = 2;
-        statusMessage = "In Progress";
-        break;
-      case 2:
-        newStatus = 3;
-        statusMessage = "Complete";
-        break;
-      case 3:
-        newStatus = 1;
-        statusMessage = "Pending";
-        break;
-      default:
-        newStatus = 1;
-        statusMessage = "Pending";
-    }
-
-    await Payment.findByIdAndUpdate(
-      orderId,
-      { status: newStatus },
-      { new: true }
-    );
-
-    console.log(`✅ Status updated to ${statusMessage}`);
-    res.status(200).json({ message: `Status updated to ${statusMessage}` });
-  } catch (error) {
-    console.error("Error updating order status:", error);
-    return res.status(500).json({ message: "Server error" });
+  if (!validStatuses.includes(orderStatus)) {
+    const error = new CustomError("Invalid order status", 400);
+    return next(error);
   }
+
+  const order = await Order.findOneAndUpdate(
+    { orderNumber },
+    { orderStatus },
+    { new: true, runValidators: true }
+  );
+
+  if (!order) {
+    const error = new CustomError("Order not found", 404);
+    return next(error);
+  }
+
+  console.log(`✅ Order ${orderNumber} status updated to ${orderStatus}`);
+
+  res.status(200).json({
+    success: true,
+    message: `Order status updated to ${orderStatus}`,
+    order
+  });
 });
 
-export {
-  addOrder,
-  getOrderWithProductDetails,
-  getOneDetails,
-  getOrdersByUser,
-  payhereNotify,
-  updateStatus
-};
+// @desc    Update payment status
+// @route   PUT /order/:orderNumber/payment
+// @access  Private/Admin
+export const updatePaymentStatus = asyncErrorHandler(async (req, res, next) => {
+  const { orderNumber } = req.params;
+  const { paymentStatus } = req.body;
+
+  const validStatuses = ["unpaid", "paid", "failed", "refunded"];
+  
+  if (!validStatuses.includes(paymentStatus)) {
+    const error = new CustomError("Invalid payment status", 400);
+    return next(error);
+  }
+
+  const order = await Order.findOneAndUpdate(
+    { orderNumber },
+    { paymentStatus },
+    { new: true, runValidators: true }
+  );
+
+  if (!order) {
+    const error = new CustomError("Order not found", 404);
+    return next(error);
+  }
+
+  console.log(`✅ Order ${orderNumber} payment status updated to ${paymentStatus}`);
+
+  res.status(200).json({
+    success: true,
+    message: `Payment status updated to ${paymentStatus}`,
+    order
+  });
+});

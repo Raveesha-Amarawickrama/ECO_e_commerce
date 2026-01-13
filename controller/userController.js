@@ -152,9 +152,11 @@ const getUser = asyncErrorHandler(async (req, res, next) => {
     const error = new CustomError("Login again..", 500);
     return next(error);
   }
+  
   if (!newuser) {
     return res.status(404).json({ messsage: "User Not Found" });
   }
+  
   return res.status(200).json({ newuser });
 });
 
@@ -229,10 +231,10 @@ const forgotPassword = asyncErrorHandler(async (req, res, next) => {
       message,
     });
 
-   res.status(200).json({
-  success: true, // ← ADD THIS LINE
-  message: "Password reset link sent to your email",
-});
+    res.status(200).json({
+      success: true,
+      message: "Password reset link sent to your email",
+    });
   } catch (error) {
     // Clear reset token if email fails
     userDoc.resetPasswordToken = undefined;
@@ -322,10 +324,10 @@ const resetPassword = asyncErrorHandler(async (req, res, next) => {
         console.error("Error sending confirmation email:", emailError);
       }
 
-    res.status(200).json({
-  success: true, // ← ADD THIS LINE
-  message: "Password reset successful. You can now login with your new password.",
-});
+      res.status(200).json({
+        success: true,
+        message: "Password reset successful. You can now login with your new password.",
+      });
     });
   });
 });

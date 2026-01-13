@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import User from "./userModel.js";
-import Order from "./order.js";
+import Order from "./orderModel.js";
 
 const billSchema= new mongoose.Schema({
     user:{

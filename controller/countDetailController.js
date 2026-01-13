@@ -1,6 +1,6 @@
 import user from "../model/userModel.js";
 import product from "../model/productModel.js";
-import order from "../model/order.js";
+import order from "../model/orderModel.js";
 import asyncErrorHandler from "../utils/asyncErrorHandler.js";
 import Category from "../model/categoryModel.js";
 
