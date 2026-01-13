@@ -66,17 +66,27 @@ export const placeOrder = asyncErrorHandler(async (req, res, next) => {
 
   console.log("✅ Order created:", order.orderNumber);
 
-  res.status(201).json({
-    success: true,
-    message: "Order placed successfully",
-    order: {
-      orderNumber: order.orderNumber,
-      totalAmount: order.totalAmount,
-      paymentMethod: order.paymentMethod,
-      orderStatus: order.orderStatus,
-      paymentStatus: order.paymentStatus
-    }
-  });
+ // Replace the res.status(201).json in your placeOrder function with this:
+
+res.status(201).json({
+  success: true,
+  message: "Order placed successfully",
+  order: {
+    orderNumber: order.orderNumber,
+    totalAmount: order.totalAmount,
+    paymentMethod: order.paymentMethod,
+    orderStatus: order.orderStatus,
+    paymentStatus: order.paymentStatus,
+    
+    customerName: order.customerName,
+    customerEmail: order.customerEmail,
+    customerPhone: order.customerPhone,
+    address: order.address,
+    city: order.city,
+   
+    items: order.items
+  }
+});
 });
 
 // @desc    Get order details by order number
