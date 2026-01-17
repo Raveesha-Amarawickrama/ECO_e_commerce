@@ -4,26 +4,23 @@ import { CustomError } from "../utils/customerError.js";
 // Optional authentication - allows both authenticated and guest users
 export const protect = (req, res, next) => {
   try {
-    // Check for token in multiple places
+
     let token = null;
 
-    // 1. Check Authorization header
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
     }
-    
-    // 2. Check cookies
+  
     if (!token && req.cookies && req.cookies.token) {
       token = req.cookies.token;
     }
 
-    // If no token, continue as guest (don't throw error)
+
     if (!token) {
       req.user = null;
       return next();
     }
 
-    // Verify token
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       req.user = {
@@ -33,7 +30,6 @@ export const protect = (req, res, next) => {
       };
       next();
     } catch (jwtError) {
-      // Invalid token - continue as guest
       req.user = null;
       next();
     }
