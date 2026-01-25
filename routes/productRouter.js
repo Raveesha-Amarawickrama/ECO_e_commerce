@@ -60,7 +60,12 @@ const storage = new CloudinaryStorage({
   },
 });
 
-const upload = multer({ storage: storage });
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB per file
+  },
+});
 const productUpload = upload.fields([
   { name: "mainImage", maxCount: 1 },
   { name: "additionalImages", maxCount: 10 },
