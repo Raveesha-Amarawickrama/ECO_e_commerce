@@ -5,8 +5,19 @@ import Brand from "../model/brandModel.js";
 import category from "../model/categoryModel.js";
 
 const addProduct = asyncErrorHandler(async (req, res, next) => {
-  const { productName, price, item_count,description, weight,color, size, categoryId, brandId } =
-    req.body;
+  const {
+    productName,
+    price,
+    item_count,
+    description,
+    weight,
+    color,
+    size,
+    categoryId,
+    brandId,
+    specifications,
+    categoryType,
+  } = req.body;
 
   const mainImage = req.files["mainImage"]
     ? req.files["mainImage"][0].path
@@ -14,6 +25,19 @@ const addProduct = asyncErrorHandler(async (req, res, next) => {
   const additionalImages = req.files["additionalImages"]
     ? req.files["additionalImages"].map((file) => file.path)
     : [];
+
+  // Parse specifications if it's a JSON string
+  let parsedSpecs = {};
+  if (specifications) {
+    try {
+      parsedSpecs = typeof specifications === "string" 
+        ? JSON.parse(specifications) 
+        : specifications;
+    } catch (error) {
+      console.error("Error parsing specifications:", error);
+    }
+  }
+
   const productAdd = await product.create({
     productName,
     price,
@@ -24,8 +48,10 @@ const addProduct = asyncErrorHandler(async (req, res, next) => {
     weight,
     categoryId,
     brandId,
-    mainImage, // Adding the main image URL
-    additionalImages, // Adding the additional image URLs
+    mainImage,
+    additionalImages,
+    categoryType: categoryType || "other",
+    specifications: parsedSpecs,
   });
 
   return res.status(201).json({ message: "ok", productAdd });
@@ -35,7 +61,6 @@ const addProduct = asyncErrorHandler(async (req, res, next) => {
 const getBrandName = asyncErrorHandler(async (req, res, next) => {
   const categoryId = req.query.category;
 
-  // console.log(categoryId);
   const brands = await Brand.find({ category: categoryId }).populate(
     "category"
   );
@@ -49,7 +74,8 @@ const getProductDetailsFrom = asyncErrorHandler(async (req, res, next) => {
       path: "brandId",
       select: "brandName category",
       populate: { path: "category", select: "categoryName" },
-    }).populate('categoryId')
+    })
+    .populate("categoryId")
     .exec();
   res.status(200).json(allDetailsDetails);
 });
@@ -57,8 +83,8 @@ const getProductDetailsFrom = asyncErrorHandler(async (req, res, next) => {
 const getOneProduct = asyncErrorHandler(async (req, res, next) => {
   const productId = req.params.id;
   const productOne = await product.findById(productId);
-  if (!product) {
-    const error = new CustomError("1", 404);
+  if (!productOne) {
+    const error = new CustomError("Product not found", 404);
     return next(error);
   }
   return res.status(200).json(productOne);
@@ -101,14 +127,29 @@ const editProduct = asyncErrorHandler(async (req, res, next) => {
     "size",
     "categoryId",
     "brandId",
-    "weight"
+    "weight",
+    "description",
+    "categoryType",
   ];
+  
   fieldsToUpdate.forEach((field) => {
     if (req.body[field] !== undefined) {
       updateData[field] = req.body[field];
     }
   });
 
+  // Handle specifications
+  if (req.body.specifications) {
+    try {
+      updateData.specifications = typeof req.body.specifications === "string"
+        ? JSON.parse(req.body.specifications)
+        : req.body.specifications;
+    } catch (error) {
+      console.error("Error parsing specifications:", error);
+    }
+  }
+
+  // Handle images
   if (req.files) {
     if (req.files["mainImage"]) {
       updateData.mainImage = req.files["mainImage"][0].path;
@@ -121,11 +162,12 @@ const editProduct = asyncErrorHandler(async (req, res, next) => {
   }
 
   const updatedProduct = await product.findOneAndUpdate(
-    { _id: productId }, // Corrected filter object
-    updateData, // Removed curly braces around updateData
+    { _id: productId },
+    updateData,
     { new: true }
   );
-  res.json({ message: "fff", updatedProduct });
+  
+  res.json({ message: "ok", updatedProduct });
 });
 
 export {

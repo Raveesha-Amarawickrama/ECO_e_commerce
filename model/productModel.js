@@ -3,23 +3,18 @@ import mongoose from "mongoose";
 const products = new mongoose.Schema({
   productName: {
     type: String,
-    
   },
   price: {
     type: Number,
-  
   },
   item_count: {
     type: Number,
-   
   },
   description: {
     type: String,
-    
   },
   weight: {
     type: Number,
-    
   },
   color: {
     type: String,
@@ -39,20 +34,87 @@ const products = new mongoose.Schema({
   },
   brandId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref:"brand",
+    ref: "brand",
     required: true,
   },
   mainImage: {
-    type: String, // URL or path to the main image
+    type: String,
   },
-  additionalImages: [{
-    type: String, // Array of URLs or paths to additional images
-  }],
-  sellType:{
-    type:String,
-    default:'ex'
-  }
-  //  need to add the image field
+  additionalImages: [
+    {
+      type: String,
+    },
+  ],
+  sellType: {
+    type: String,
+    default: "ex",
+  },
+  categoryType: {
+    type: String,
+    enum: ["cosmetics", "electronics", "other"],
+    default: "other",
+  },
+  specifications: {
+    // Common field
+    usage: {
+      type: String,
+      default: "",
+    },
+    
+    // Cosmetics specifications
+    manufactureCountry: {
+      type: String,
+      default: "",
+    },
+    netWeightVolume: {
+      type: String,
+      default: "",
+    },
+    suitableFor: {
+      type: String,
+      default: "",
+    },
+    hairSkinType: {
+      type: String,
+      default: "",
+    },
+    keyIngredients: {
+      type: String,
+      default: "",
+    },
+    packaging: {
+      type: String,
+      default: "",
+    },
+    shelfLife: {
+      type: String,
+      default: "",
+    },
+    
+    // Electronics specifications
+    model: {
+      type: String,
+      default: "",
+    },
+    powerSupply: {
+      type: String,
+      default: "",
+    },
+    material: {
+      type: String,
+      default: "",
+    },
+    compatibility: {
+      type: String,
+      default: "",
+    },
+    warranty: {
+      type: String,
+      default: "",
+    },
+  },
+}, {
+  timestamps: true // Adds createdAt and updatedAt fields
 });
 
 const Product = mongoose.model("product", products);
