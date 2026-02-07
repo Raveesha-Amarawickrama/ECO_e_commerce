@@ -9,73 +9,49 @@ import {
   oneProductDetails,
 } from "../controller/productController.js";
 
-import multer from "multer";
-import { addCategory,gellAllCategory,deleteCategory, editCategory} from "../controller/categoryController.js";
-import { addBrand,deleteBrand,editBrand,gellAllBrand } from "../controller/brandController.js";
+import { upload } from "../config/cloudinary.js"; // Import upload from cloudinary
+import { addCategory, gellAllCategory, deleteCategory, editCategory } from "../controller/categoryController.js";
+import { addBrand, deleteBrand, editBrand, gellAllBrand } from "../controller/brandController.js";
 import { protect } from "../middleware/authMiddleware.js";
-import { CloudinaryStorage } from "multer-storage-cloudinary";
-import cloudinary from "../config/cloudinary.js";
 
 const router = Router();
-// category controller
+
+// Category routes
 router.route("/category/addCategory").post(addCategory);
 router.route("/category/getAllCategory").get(gellAllCategory);
 router.route("/category/delete/:id").post(deleteCategory);
 router.route("/category/edit/:id").put(editCategory);
 
-
+// Brand routes
 router.route("/brand/addBrand").post(addBrand);
 router.route("/brand/getBrand").get(gellAllBrand);
 router.route("/category/getBrandName").get(getBrandName);
-router.route("/brand/delete/:id").put(deleteBrand)
+router.route("/brand/delete/:id").put(deleteBrand);
 router.route("/brand/editBrand/:id").put(editBrand);
 
-// router.route("/order/addOrder/:userid/:productid").post(addOrder);
+// Product routes with Cloudinary upload
+router.post(
+  "/addProduct",
+  upload.fields([
+    { name: "mainImage", maxCount: 1 },
+    { name: "additionalImages", maxCount: 3 },
+  ]),
+  addProduct
+);
 
+router.put(
+  "/editProduct/:id",
+  upload.fields([
+    { name: "mainImage", maxCount: 1 },
+    { name: "additionalImages", maxCount: 3 }
+  ]),
+  editProduct
+);
 
-// Set up storage for multer
-// const storage = multer.diskStorage({
-//   destination: function (req, file, cb) {
-//     cb(null, "uploads");
-//   },
-//   filename: function (req, file, cb) {
-//     cb(null, file.fieldname + "-" + Date.now() + "-" + file.originalname);
-//   },
-// });
-
-const storage = new CloudinaryStorage({
-  cloudinary,
-  params: async (req, file) => {
-    const uniqueId = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-
-    return {
-      folder:
-        file.fieldname === "mainImage"
-          ? "products/main"
-          : "products/additional",
-
-      public_id: uniqueId,
-      allowed_formats: ["jpg", "jpeg", "png", "webp"],
-    };
-  },
-});
-
-const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB per file
-  },
-});
-const productUpload = upload.fields([
-  { name: "mainImage", maxCount: 1 },
-  { name: "additionalImages", maxCount: 10 },
-]);
-router.route("/addProduct").post(protect,productUpload, addProduct);
-router.route("/editProduct/:id").put(protect,productUpload, editProduct);
+// Other product routes
 router.route("/getAllDetails").get(getProductDetailsFrom);
-router.route("/getOneProduct/:id").get(protect,getOneProduct);
-router.route("/productDelete/:id").post(protect,deleteProduct);
+router.route("/getOneProduct/:id").get(protect, getOneProduct);
+router.route("/productDelete/:id").post(protect, deleteProduct);
 router.route("/oneProductDetails/:id").get(oneProductDetails);
-
 
 export default router;

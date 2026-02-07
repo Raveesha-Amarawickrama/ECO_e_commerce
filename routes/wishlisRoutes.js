@@ -1,3 +1,4 @@
+// routes/wishlistRoutes.js
 import { Router } from "express";
 import {
   addToWishlist,
@@ -5,20 +6,25 @@ import {
   removeFromWishlist,
   clearWishlist,
   getWishlistCount,
-  syncWishlist
+  syncWishlist,
+  cleanupWishlist
 } from "../controller/wishlistController.js";
-import { protect } from "../middleware/authMiddleware.js";
+import { requireAuth } from "../middleware/authMiddleware.js";
 
 const router = Router();
 
-// Public routes (work for both guest and authenticated users)
-router.get("/", protect, getWishlist);
-router.get("/count", protect, getWishlistCount);
-router.post("/add", protect, addToWishlist);
-router.post("/remove", protect, removeFromWishlist);
-router.post("/clear", protect, clearWishlist);
+// CRITICAL: All wishlist routes REQUIRE authentication (use requireAuth)
+// Wishlist is not available for guest users
 
-// Protected route - Sync guest wishlist after login
-router.post("/sync", protect, syncWishlist);
+// GET routes
+router.get("/", requireAuth, getWishlist);
+router.get("/count", requireAuth, getWishlistCount);
+
+// POST routes
+router.post("/add", requireAuth, addToWishlist);
+router.post("/remove", requireAuth, removeFromWishlist);
+router.post("/clear", requireAuth, clearWishlist);
+router.post("/sync", requireAuth, syncWishlist);
+router.post("/cleanup", requireAuth, cleanupWishlist);
 
 export default router;

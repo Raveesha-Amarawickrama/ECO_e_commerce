@@ -1,3 +1,4 @@
+// routes/cartRoutes.js
 import { Router } from "express";
 import {
   addToCart,
@@ -6,35 +7,25 @@ import {
   removeFromCart,
   clearCart,
   getCartCount,
-  syncCart
+  syncCart,
+  mergeCart
 } from "../controller/cartController.js";
-import { protect } from "../middleware/authMiddleware.js";
+import { protect, requireAuth } from "../middleware/authMiddleware.js";
 
 const router = Router();
 
-// Public routes (work for both guest and authenticated users)
-// These routes check if user is authenticated and use userId if available
-
-// GET - Get cart items
-router.get("/", protect, getCart); // protect is optional - allows both authenticated and guest
-
-// GET - Get cart count
+// CRITICAL: Public routes use 'protect' (optional auth - works for guest AND authenticated)
+// These routes check if user is authenticated, but allow requests without auth
+router.get("/", protect, getCart);
 router.get("/count", protect, getCartCount);
-
-// POST - Add to cart
 router.post("/add", protect, addToCart);
-
-// POST - Update quantity
 router.post("/update", protect, updateCart);
-
-// POST - Remove from cart
 router.post("/remove", protect, removeFromCart);
-
-// POST - Clear cart
 router.post("/clear", protect, clearCart);
 
-// Protected route (requires authentication)
-// POST - Sync guest cart to user cart after login
-router.post("/sync", protect, syncCart);
+// CRITICAL: Sync/merge routes use 'requireAuth' (authentication REQUIRED)
+// These routes need a valid user to sync guest cart to user cart
+router.post("/sync", requireAuth, syncCart);
+router.post("/merge", requireAuth, mergeCart);
 
 export default router;

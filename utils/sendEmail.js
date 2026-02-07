@@ -17,8 +17,8 @@ const sendEmail = async (options) => {
       port: parseInt(process.env.EMAIL_PORT), // 465
       secure: process.env.SECURE === "true", // true for port 465
       auth: {
-        user: process.env.USER, // udithaindunil5@gmail.com
-        pass: process.env.PASS, // Your Gmail App Password
+        user: process.env.EMAIL_USER,  
+        pass: process.env.EMAIL_PASS,  
       },
       tls: {
         rejectUnauthorized: false, // Accept self-signed certificates

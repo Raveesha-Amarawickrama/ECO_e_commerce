@@ -1,121 +1,265 @@
+// model/productModel.js
 import mongoose from "mongoose";
 
-const products = new mongoose.Schema({
-  productName: {
-    type: String,
-  },
-  price: {
-    type: Number,
-  },
-  item_count: {
-    type: Number,
-  },
-  description: {
-    type: String,
-  },
-  weight: {
-    type: Number,
-  },
-  color: {
-    type: String,
-  },
-  size: {
-    type: String,
-    default: "normal",
-  },
-  isActive: {
-    type: Boolean,
-    default: true,
-  },
-  categoryId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "category",
-    required: true,
-  },
-  brandId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "brand",
-    required: true,
-  },
-  mainImage: {
-    type: String,
-  },
-  additionalImages: [
-    {
+const productSchema = new mongoose.Schema(
+  {
+    productName: {
       type: String,
-    },
-  ],
-  sellType: {
-    type: String,
-    default: "ex",
-  },
-  categoryType: {
-    type: String,
-    enum: ["cosmetics", "electronics", "other"],
-    default: "other",
-  },
-  specifications: {
-    // Common field
-    usage: {
-      type: String,
-      default: "",
+      required: [true, "Product name is required"],
+      trim: true,
+      index: true
     },
     
-    // Cosmetics specifications
-    manufactureCountry: {
-      type: String,
-      default: "",
-    },
-    netWeightVolume: {
-      type: String,
-      default: "",
-    },
-    suitableFor: {
-      type: String,
-      default: "",
-    },
-    hairSkinType: {
-      type: String,
-      default: "",
-    },
-    keyIngredients: {
-      type: String,
-      default: "",
-    },
-    packaging: {
-      type: String,
-      default: "",
-    },
-    shelfLife: {
-      type: String,
-      default: "",
+    price: {
+      type: Number,
+      required: [true, "Price is required"],
+      min: [0, "Price cannot be negative"]
     },
     
-    // Electronics specifications
-    model: {
-      type: String,
-      default: "",
+    item_count: {
+      type: Number,
+      default: 0,
+      min: [0, "Item count cannot be negative"]
     },
-    powerSupply: {
+    
+    description: {
       type: String,
-      default: "",
+      trim: true
     },
-    material: {
+    
+    weight: {
+      type: Number,
+      min: 0
+    },
+    
+    color: {
       type: String,
-      default: "",
+      trim: true
     },
-    compatibility: {
+    
+    size: {
       type: String,
-      default: "",
+      trim: true,
+      default: "normal"
     },
-    warranty: {
+    
+    isActive: {
+      type: Boolean,
+      default: true,
+      index: true
+    },
+    
+    categoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      required: true,
+      index: true
+    },
+    
+    brandId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Brand",
+      required: true,
+      index: true
+    },
+    
+    mainImage: {
       type: String,
-      default: "",
+      required: [true, "Main image is required"]
     },
+    
+    additionalImages: {
+      type: [String],
+      default: []
+    },
+    
+    sellType: {
+      type: String,
+      default: "ex",
+      enum: ["ex", "wholesale", "retail"]
+    },
+    
+    categoryType: {
+      type: String,
+      enum: ["cosmetics", "electronics", "other"],
+      default: "other",
+      index: true
+    },
+    
+    specifications: {
+      usage: {
+        type: String,
+        default: ""
+      },
+      
+      // Cosmetics specifications
+      manufactureCountry: {
+        type: String,
+        default: ""
+      },
+      netWeightVolume: {
+        type: String,
+        default: ""
+      },
+      suitableFor: {
+        type: String,
+        default: ""
+      },
+      hairSkinType: {
+        type: String,
+        default: ""
+      },
+      keyIngredients: {
+        type: String,
+        default: ""
+      },
+      packaging: {
+        type: String,
+        default: ""
+      },
+      shelfLife: {
+        type: String,
+        default: ""
+      },
+      
+      // Electronics specifications
+      model: {
+        type: String,
+        default: ""
+      },
+      powerSupply: {
+        type: String,
+        default: ""
+      },
+      material: {
+        type: String,
+        default: ""
+      },
+      compatibility: {
+        type: String,
+        default: ""
+      },
+      warranty: {
+        type: String,
+        default: ""
+      }
+    },
+    
+    sku: {
+      type: String,
+      unique: true,
+      sparse: true
+    },
+    
+    tags: {
+      type: [String],
+      default: []
+    },
+    
+    rating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5
+    },
+    
+    reviewCount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    
+    isFeatured: {
+      type: Boolean,
+      default: false
+    },
+    
+    discountPercentage: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100
+    }
   },
-}, {
-  timestamps: true // Adds createdAt and updatedAt fields
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+  }
+);
+
+// Indexes
+productSchema.index({ productName: 1 });
+productSchema.index({ categoryId: 1 });
+productSchema.index({ brandId: 1 });
+productSchema.index({ price: 1 });
+productSchema.index({ isActive: 1 });
+productSchema.index({ categoryType: 1 });
+productSchema.index({ createdAt: -1 });
+
+// Compound indexes
+productSchema.index({ categoryId: 1, isActive: 1 });
+productSchema.index({ brandId: 1, isActive: 1 });
+productSchema.index({ categoryType: 1, isActive: 1 });
+
+// Virtual for checking if product is in stock
+productSchema.virtual('inStock').get(function() {
+  return this.item_count > 0;
 });
 
-const Product = mongoose.model("product", products);
+// Virtual for calculated discount price
+productSchema.virtual('discountedPrice').get(function() {
+  if (this.discountPercentage > 0) {
+    return this.price * (1 - this.discountPercentage / 100);
+  }
+  return this.price;
+});
+
+// Method to reduce stock
+productSchema.methods.reduceStock = function(quantity) {
+  if (this.item_count < quantity) {
+    throw new Error('Insufficient stock');
+  }
+  this.item_count -= quantity;
+  return this.save();
+};
+
+// Method to increase stock
+productSchema.methods.increaseStock = function(quantity) {
+  this.item_count += quantity;
+  return this.save();
+};
+
+// Method to check if product is available
+productSchema.methods.isAvailable = function() {
+  return this.isActive && this.item_count > 0;
+};
+
+// Static methods
+productSchema.statics.findActive = function() {
+  return this.find({ isActive: true });
+};
+
+productSchema.statics.findByCategory = function(categoryId) {
+  return this.find({ categoryId, isActive: true }).populate('categoryId brandId');
+};
+
+productSchema.statics.findByBrand = function(brandId) {
+  return this.find({ brandId, isActive: true }).populate('categoryId brandId');
+};
+
+productSchema.statics.findByCategoryType = function(categoryType) {
+  return this.find({ categoryType, isActive: true }).populate('categoryId brandId');
+};
+
+// Pre-save hook to generate SKU
+productSchema.pre('save', async function(next) {
+  if (this.isNew && !this.sku) {
+    this.sku = `PRD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+  }
+  next();
+});
+
+const Product = mongoose.model("Product", productSchema);
+
 export default Product;

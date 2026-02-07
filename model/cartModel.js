@@ -17,7 +17,8 @@ const cartItemSchema = new mongoose.Schema({
   quantity: {
     type: Number,
     required: true,
-    min: 1
+    min: 1,
+    default: 1
   },
   mainImage: {
     type: String
@@ -33,6 +34,14 @@ const cartItemSchema = new mongoose.Schema({
   weight: {
     type: Number,
     default: 0
+  },
+  inStock: {
+    type: Boolean,
+    default: true
+  },
+  addedAt: {
+    type: Date,
+    default: Date.now
   }
 });
 
@@ -41,18 +50,31 @@ const cartSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      default: null
+      sparse: true
     },
     sessionId: {
       type: String,
-      default: null
+      sparse: true
     },
-    items: [cartItemSchema]
+    items: [cartItemSchema],
+    lastUpdated: {
+      type: Date,
+      default: Date.now
+    }
   },
   {
     timestamps: true
   }
 );
+
+// Compound index for efficient queries
+cartSchema.index({ userId: 1, sessionId: 1 });
+
+// Auto-update lastUpdated timestamp
+cartSchema.pre('save', function(next) {
+  this.lastUpdated = Date.now();
+  next();
+});
 
 // Validation: Ensure at least ONE identifier exists
 cartSchema.pre('save', function(next) {
@@ -60,13 +82,20 @@ cartSchema.pre('save', function(next) {
     const error = new Error('Cart must have either userId or sessionId');
     return next(error);
   }
+  
+  // Remove duplicates based on productId, color, and size
+  const seen = new Set();
+  this.items = this.items.filter(item => {
+    const key = `${item.productId}-${item.color}-${item.size}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+  
   next();
 });
-
-// IMPORTANT: Create indexes that allow null values (not unique)
-// This prevents duplicate key errors when sessionId or userId is null
-cartSchema.index({ userId: 1 }, { sparse: true, unique: false });
-cartSchema.index({ sessionId: 1 }, { sparse: true, unique: false });
 
 const Cart = mongoose.model("Cart", cartSchema);
 

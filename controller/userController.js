@@ -161,7 +161,7 @@ const getUser = asyncErrorHandler(async (req, res, next) => {
 });
 
 const getAllDetailsUser = asyncErrorHandler(async (req, res, next) => {
-  const userDetails = await user.find({});
+  const userDetails = await user.find({}).select("-password");
   res.status(200).json(userDetails);
 });
 
@@ -171,6 +171,35 @@ const logOutUser = asyncErrorHandler(async (req, res, next) => {
     expires: new Date(0),
   });
   res.status(200).json({ message: "log out" });
+});
+
+// ========================================
+// USER MANAGEMENT - DELETE USER
+// ========================================
+const deleteUser = asyncErrorHandler(async (req, res, next) => {
+  const userId = req.params.id;
+
+  // Prevent deleting yourself
+  if (userId === req.user) {
+    const error = new CustomError("You cannot delete your own account", 400);
+    return next(error);
+  }
+
+  const userDoc = await user.findById(userId);
+
+  if (!userDoc) {
+    const error = new CustomError("User not found", 404);
+    return next(error);
+  }
+
+  // Soft delete - set isActive to false instead of actually deleting
+  userDoc.isActive = false;
+  await userDoc.save();
+
+  res.status(200).json({ 
+    message: "ok",
+    success: true 
+  });
 });
 
 // ========================================
@@ -536,6 +565,7 @@ export {
   verifyGmail,
   forgotPassword,
   resetPassword,
+  deleteUser,
   getUserCart,
   addToCart,
   removeFromCart,

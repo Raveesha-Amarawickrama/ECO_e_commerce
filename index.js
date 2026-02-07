@@ -12,12 +12,12 @@ import cartRoutes from './routes/cartRoutes.js';
 import wishlistRoutes from './routes/wishlisRoutes.js'; 
 import orderRoutes from './routes/orderRoutes.js';
 import contactRoutes from './routes/contactRoutes.js'; 
-
+import categoryRouter from "./routes/categoryRouter.js";
 import authRouter from "./routes/authRoutes.js";
 import orderRouter from "./routes/orderRoutes.js";
 import countRouter from "./routes/countDetailsRouter.js";
 import feedbackRouter from "./routes/feedbackRouter.js";
-       
+   import brandRouter from "./routes/brandRouter.js";
 import { CustomError } from "./utils/customerError.js";
 import globalErrorHandler from "./controller/errorController.js";
 import cors from "cors";
@@ -94,10 +94,11 @@ app.use("/auth", authRouter);
 
 // Product Routes
 app.use("/products", productRouter);
-
+app.use("/api/brands", brandRouter);
 // Shopping Routes
 app.use("/cart", cartRoutes);
 app.use("/wishlist", wishlistRoutes); 
+
 
 // Order & Billing Routes
 app.use("/bill", billRouter);
@@ -108,6 +109,9 @@ app.use("/order", orderRoutes);
 app.use("/feedback", feedbackRouter);
 app.use("/dashboard", countRouter);
 app.use("/contact", contactRoutes);
+
+app.use("/categories", categoryRouter);
+
 
 // =====================
 // ERROR HANDLING

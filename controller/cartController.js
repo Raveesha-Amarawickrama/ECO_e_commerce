@@ -17,7 +17,7 @@ const addToCart = asyncErrorHandler(async (req, res, next) => {
   }
 
   const userId = req.user?.id || req.user?._id;
-  const sessionId = getOrCreateSessionId(req);
+  const sessionId = getOrCreateSessionId(req, res);
 
   // IMPORTANT: Log to debug
   console.log('Cart operation:', { userId, sessionId, hasUser: !!userId });
@@ -101,7 +101,8 @@ const addToCart = asyncErrorHandler(async (req, res, next) => {
       mainImage: productData.mainImage,
       color: color || "",
       size: size || "",
-      weight: productData.weight || 0
+      weight: productData.weight || 0,
+      inStock: productData.item_count > 0
     });
   }
 
@@ -121,7 +122,7 @@ const addToCart = asyncErrorHandler(async (req, res, next) => {
 // @access  Public
 const getCart = asyncErrorHandler(async (req, res, next) => {
   const userId = req.user?.id || req.user?._id;
-  const sessionId = getOrCreateSessionId(req);
+  const sessionId = getOrCreateSessionId(req, res);
 
   let cart;
   if (userId) {
@@ -139,10 +140,34 @@ const getCart = asyncErrorHandler(async (req, res, next) => {
     });
   }
 
+  // Populate product data for better frontend experience
+  const cartItems = await Promise.all(
+    cart.items.map(async (item) => {
+      try {
+        const product = await Product.findById(item.productId).select('productName price mainImage item_count weight category');
+        return {
+          _id: item._id,
+          productId: item.productId,
+          productName: product ? product.productName : item.productName,
+          price: product ? product.price : item.price,
+          mainImage: product ? product.mainImage : item.mainImage,
+          quantity: item.quantity,
+          color: item.color,
+          size: item.size,
+          weight: item.weight,
+          inStock: product ? product.item_count > 0 : true,
+          stockCount: product ? product.item_count : 0
+        };
+      } catch (error) {
+        return item;
+      }
+    })
+  );
+
   res.status(200).json({
     success: true,
-    cart: cart.items,
-    cartCount: cart.items.length,
+    cart: cartItems,
+    cartCount: cartItems.length,
     sessionId
   });
 });
@@ -164,7 +189,7 @@ const updateCart = asyncErrorHandler(async (req, res, next) => {
   }
 
   const userId = req.user?.id || req.user?._id;
-  const sessionId = getOrCreateSessionId(req);
+  const sessionId = getOrCreateSessionId(req, res);
 
   let cart;
   if (userId) {
@@ -178,17 +203,22 @@ const updateCart = asyncErrorHandler(async (req, res, next) => {
     return next(error);
   }
 
-  const cartItem = cart.items.find(
+  const cartItemIndex = cart.items.findIndex(
     (item) => item.productId.toString() === productId
   );
 
-  if (!cartItem) {
+  if (cartItemIndex === -1) {
     const error = new CustomError("Item not found in cart", 404);
     return next(error);
   }
 
   // Check stock
   const product = await Product.findById(productId);
+  if (!product) {
+    const error = new CustomError("Product not found", 404);
+    return next(error);
+  }
+
   if (product.item_count < quantity) {
     const error = new CustomError(
       `Only ${product.item_count} items available`,
@@ -197,7 +227,7 @@ const updateCart = asyncErrorHandler(async (req, res, next) => {
     return next(error);
   }
 
-  cartItem.quantity = parseInt(quantity);
+  cart.items[cartItemIndex].quantity = parseInt(quantity);
   await cart.save();
 
   res.status(200).json({
@@ -219,7 +249,7 @@ const removeFromCart = asyncErrorHandler(async (req, res, next) => {
   }
 
   const userId = req.user?.id || req.user?._id;
-  const sessionId = getOrCreateSessionId(req);
+  const sessionId = getOrCreateSessionId(req, res);
 
   let cart;
   if (userId) {
@@ -233,9 +263,15 @@ const removeFromCart = asyncErrorHandler(async (req, res, next) => {
     return next(error);
   }
 
+  const initialCount = cart.items.length;
   cart.items = cart.items.filter(
     (item) => item.productId.toString() !== productId
   );
+
+  if (cart.items.length === initialCount) {
+    const error = new CustomError("Item not found in cart", 404);
+    return next(error);
+  }
 
   await cart.save();
 
@@ -252,7 +288,7 @@ const removeFromCart = asyncErrorHandler(async (req, res, next) => {
 // @access  Public
 const clearCart = asyncErrorHandler(async (req, res, next) => {
   const userId = req.user?.id || req.user?._id;
-  const sessionId = getOrCreateSessionId(req);
+  const sessionId = getOrCreateSessionId(req, res);
 
   let cart;
   if (userId) {
@@ -281,7 +317,7 @@ const clearCart = asyncErrorHandler(async (req, res, next) => {
 // @access  Public
 const getCartCount = asyncErrorHandler(async (req, res, next) => {
   const userId = req.user?.id || req.user?._id;
-  const sessionId = getOrCreateSessionId(req);
+  const sessionId = getOrCreateSessionId(req, res);
 
   let cart;
   if (userId) {
@@ -290,7 +326,7 @@ const getCartCount = asyncErrorHandler(async (req, res, next) => {
     cart = await Cart.findOne({ sessionId });
   }
 
-  const count = cart ? cart.items.length : 0;
+  const count = cart ? cart.items.reduce((total, item) => total + item.quantity, 0) : 0;
 
   res.status(200).json({
     success: true,
@@ -301,6 +337,7 @@ const getCartCount = asyncErrorHandler(async (req, res, next) => {
 // @desc    Sync guest cart to user cart after login
 // @route   POST /api/cart/sync
 // @access  Private (requires authentication)
+// In cartController.js - update syncCart function
 const syncCart = asyncErrorHandler(async (req, res, next) => {
   const userId = req.user?.id || req.user?._id;
   const sessionId = req.headers['x-session-id'];
@@ -310,68 +347,106 @@ const syncCart = asyncErrorHandler(async (req, res, next) => {
     return next(error);
   }
 
-  if (!sessionId) {
-    // No session cart to sync, just return user cart
-    const userCart = await Cart.findOne({ userId });
-    return res.status(200).json({
-      success: true,
-      cart: userCart ? userCart.items : [],
-      message: "No session cart to sync"
-    });
-  }
-
-  // Find session cart (guest cart)
-  const sessionCart = await Cart.findOne({ sessionId });
-
-  if (!sessionCart || sessionCart.items.length === 0) {
-    // No items in session cart, just return user cart
-    const userCart = await Cart.findOne({ userId });
-    return res.status(200).json({
-      success: true,
-      cart: userCart ? userCart.items : [],
-      message: "Session cart is empty"
-    });
-  }
-
-  // Find or create user cart
+  // Find user cart
   let userCart = await Cart.findOne({ userId });
+  
+  // Find guest cart if sessionId exists
+  let guestCart = null;
+  if (sessionId) {
+    guestCart = await Cart.findOne({ sessionId });
+  }
 
   if (!userCart) {
-    // Create new cart for user with session items
+    // Create new cart for user
     userCart = new Cart({
       userId,
-      items: sessionCart.items
+      items: guestCart ? guestCart.items : []
     });
-    await userCart.save();
-  } else {
-    // Merge session cart into user cart
-    for (const sessionItem of sessionCart.items) {
+  } else if (guestCart && guestCart.items.length > 0) {
+    // Merge guest cart into user cart
+    for (const guestItem of guestCart.items) {
       const existingItemIndex = userCart.items.findIndex(
-        (item) =>
-          item.productId.toString() === sessionItem.productId.toString() &&
-          item.color === sessionItem.color &&
-          item.size === sessionItem.size
+        (item) => item.productId.toString() === guestItem.productId.toString()
       );
 
       if (existingItemIndex > -1) {
         // Update quantity if item exists
-        userCart.items[existingItemIndex].quantity += sessionItem.quantity;
+        userCart.items[existingItemIndex].quantity += guestItem.quantity;
       } else {
         // Add new item
-        userCart.items.push(sessionItem);
+        userCart.items.push(guestItem);
       }
     }
-    await userCart.save();
   }
 
-  // Delete session cart after successful sync
-  await Cart.deleteOne({ sessionId });
+  await userCart.save();
+
+  // Delete guest cart
+  if (guestCart) {
+    await Cart.deleteOne({ _id: guestCart._id });
+  }
 
   res.status(200).json({
     success: true,
     cart: userCart.items,
     cartCount: userCart.items.length,
     message: "Cart synced successfully"
+  });
+});
+
+// @desc    Merge carts - Alternative sync method
+// @route   POST /api/cart/merge
+// @access  Private
+const mergeCart = asyncErrorHandler(async (req, res, next) => {
+  const userId = req.user?.id || req.user?._id;
+  const { sessionId, guestCart } = req.body;
+
+  if (!userId) {
+    const error = new CustomError("Authentication required", 401);
+    return next(error);
+  }
+
+  // Find or create user cart
+  let userCart = await Cart.findOne({ userId });
+
+  if (!userCart) {
+    userCart = new Cart({
+      userId,
+      items: []
+    });
+  }
+
+  // Merge guest cart items if provided
+  if (guestCart && Array.isArray(guestCart)) {
+    for (const guestItem of guestCart) {
+      const existingItemIndex = userCart.items.findIndex(
+        (item) =>
+          item.productId.toString() === guestItem.productId &&
+          item.color === guestItem.color &&
+          item.size === guestItem.size
+      );
+
+      if (existingItemIndex > -1) {
+        userCart.items[existingItemIndex].quantity += guestItem.quantity || 1;
+      } else {
+        userCart.items.push(guestItem);
+      }
+    }
+  }
+
+  await userCart.save();
+
+  // If sessionId provided, delete the session cart
+  if (sessionId) {
+    await Cart.deleteOne({ sessionId });
+    res.clearCookie('sessionId');
+  }
+
+  res.status(200).json({
+    success: true,
+    cart: userCart.items,
+    cartCount: userCart.items.length,
+    message: "Cart merged successfully"
   });
 });
 
@@ -382,5 +457,6 @@ export {
   removeFromCart,
   clearCart,
   getCartCount,
-  syncCart
+  syncCart,
+  mergeCart
 };

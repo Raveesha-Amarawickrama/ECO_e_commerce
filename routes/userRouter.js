@@ -8,6 +8,7 @@ import {
   verifyGmail,
   forgotPassword,
   resetPassword,
+  deleteUser,
   getUserCart,
   addToCart,
   removeFromCart,
@@ -38,6 +39,7 @@ router.route("/reset-password/:token").post(resetPassword);
 // ========================================
 router.route("/getUser").get(protect, getUser);
 router.route("/getAllUsers").get(protect, getAllDetailsUser);
+router.route("/delete/:id").post(protect, deleteUser);
 
 // ========================================
 // CART ROUTES

@@ -1,9 +1,13 @@
+// model/wishlistModel.js
 import mongoose from "mongoose";
+
+// ⚠️ CRITICAL: Don't import Product model here - it causes circular dependency
+// Instead, use ref: "Product" and let Mongoose handle the population
 
 const wishlistItemSchema = new mongoose.Schema({
   productId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "Product",
+    ref: "Product", // String reference, not direct import
     required: true
   },
   productName: {
@@ -25,15 +29,10 @@ const wishlistItemSchema = new mongoose.Schema({
 
 const wishlistSchema = new mongoose.Schema(
   {
-    // Either userId OR sessionId will be present
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      sparse: true
-    },
-    sessionId: {
-      type: String,
-      sparse: true
+      required: true
     },
     items: [wishlistItemSchema]
   },
@@ -42,18 +41,61 @@ const wishlistSchema = new mongoose.Schema(
   }
 );
 
-// Ensure either userId or sessionId is present
-wishlistSchema.pre('save', function(next) {
-  if (!this.userId && !this.sessionId) {
-    next(new Error('Wishlist must have either userId or sessionId'));
-  } else {
-    next();
-  }
-});
-
 // Index for faster queries
 wishlistSchema.index({ userId: 1 });
-wishlistSchema.index({ sessionId: 1 });
+
+// Virtual for item count
+wishlistSchema.virtual('itemCount').get(function() {
+  return this.items.length;
+});
+
+// Method to check if product exists in wishlist
+wishlistSchema.methods.hasProduct = function(productId) {
+  return this.items.some(item => 
+    item.productId.toString() === productId.toString()
+  );
+};
+
+// Method to add product to wishlist
+wishlistSchema.methods.addProduct = function(productData) {
+  if (!this.hasProduct(productData._id)) {
+    this.items.push({
+      productId: productData._id,
+      productName: productData.productName,
+      price: productData.price,
+      mainImage: productData.mainImage
+    });
+  }
+  return this;
+};
+
+// Method to remove product from wishlist
+wishlistSchema.methods.removeProduct = function(productId) {
+  this.items = this.items.filter(
+    item => item.productId.toString() !== productId.toString()
+  );
+  return this;
+};
+
+// Method to clear all items
+wishlistSchema.methods.clearItems = function() {
+  this.items = [];
+  return this;
+};
+
+// Static method to get or create wishlist for user
+wishlistSchema.statics.getOrCreateForUser = async function(userId) {
+  let wishlist = await this.findOne({ userId });
+  
+  if (!wishlist) {
+    wishlist = await this.create({
+      userId,
+      items: []
+    });
+  }
+  
+  return wishlist;
+};
 
 const Wishlist = mongoose.model("Wishlist", wishlistSchema);
 
