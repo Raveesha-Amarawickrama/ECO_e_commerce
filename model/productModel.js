@@ -1,4 +1,4 @@
-// model/productModel.js
+// model/productModel.js - UPDATED WITH DISCOUNT FEATURE
 import mongoose from "mongoose";
 
 const productSchema = new mongoose.Schema(
@@ -14,6 +14,30 @@ const productSchema = new mongoose.Schema(
       type: Number,
       required: [true, "Price is required"],
       min: [0, "Price cannot be negative"]
+    },
+    
+    // NEW FIELDS FOR DISCOUNT FEATURE
+    hasDiscount: {
+      type: Boolean,
+      default: false,
+      index: true
+    },
+    
+    discountPercentage: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+      validate: {
+        validator: function(value) {
+          // If hasDiscount is true, discountPercentage must be > 0
+          if (this.hasDiscount && value <= 0) {
+            return false;
+          }
+          return true;
+        },
+        message: 'Discount percentage must be greater than 0 when discount is enabled'
+      }
     },
     
     item_count: {
@@ -172,13 +196,6 @@ const productSchema = new mongoose.Schema(
     isFeatured: {
       type: Boolean,
       default: false
-    },
-    
-    discountPercentage: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 100
     }
   },
   {
@@ -195,23 +212,30 @@ productSchema.index({ brandId: 1 });
 productSchema.index({ price: 1 });
 productSchema.index({ isActive: 1 });
 productSchema.index({ categoryType: 1 });
+productSchema.index({ hasDiscount: 1 }); // NEW INDEX
 productSchema.index({ createdAt: -1 });
 
 // Compound indexes
 productSchema.index({ categoryId: 1, isActive: 1 });
 productSchema.index({ brandId: 1, isActive: 1 });
 productSchema.index({ categoryType: 1, isActive: 1 });
+productSchema.index({ hasDiscount: 1, isActive: 1 }); // NEW COMPOUND INDEX
 
 // Virtual for checking if product is in stock
 productSchema.virtual('inStock').get(function() {
   return this.item_count > 0;
 });
 
-// Virtual for calculated discount price
+// UPDATED: Virtual for calculated discount price
 productSchema.virtual('discountedPrice').get(function() {
-  if (this.discountPercentage > 0) {
+  if (this.hasDiscount && this.discountPercentage > 0) {
     return this.price * (1 - this.discountPercentage / 100);
   }
+  return this.price;
+});
+
+// NEW: Virtual for original price (when product has discount, price is original)
+productSchema.virtual('displayPrice').get(function() {
   return this.price;
 });
 
@@ -235,6 +259,23 @@ productSchema.methods.isAvailable = function() {
   return this.isActive && this.item_count > 0;
 };
 
+// NEW: Method to enable discount
+productSchema.methods.enableDiscount = function(percentage) {
+  if (percentage <= 0 || percentage > 100) {
+    throw new Error('Discount percentage must be between 1 and 100');
+  }
+  this.hasDiscount = true;
+  this.discountPercentage = percentage;
+  return this.save();
+};
+
+// NEW: Method to disable discount
+productSchema.methods.disableDiscount = function() {
+  this.hasDiscount = false;
+  this.discountPercentage = 0;
+  return this.save();
+};
+
 // Static methods
 productSchema.statics.findActive = function() {
   return this.find({ isActive: true });
@@ -250,6 +291,11 @@ productSchema.statics.findByBrand = function(brandId) {
 
 productSchema.statics.findByCategoryType = function(categoryType) {
   return this.find({ categoryType, isActive: true }).populate('categoryId brandId');
+};
+
+// NEW: Find products with discount
+productSchema.statics.findWithDiscount = function() {
+  return this.find({ hasDiscount: true, isActive: true }).populate('categoryId brandId');
 };
 
 // Pre-save hook to generate SKU

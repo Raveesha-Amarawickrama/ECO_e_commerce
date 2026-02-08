@@ -18,6 +18,8 @@ const addProduct = asyncErrorHandler(async (req, res, next) => {
     brandId,
     specifications,
     categoryType,
+    hasDiscount,      // NEW
+    discountPercentage // NEW
   } = req.body;
 
   // Get Cloudinary URLs from uploaded files
@@ -41,6 +43,15 @@ const addProduct = asyncErrorHandler(async (req, res, next) => {
     }
   }
 
+  // NEW: Validate discount
+  const isDiscounted = hasDiscount === 'true' || hasDiscount === true;
+  const discountValue = parseFloat(discountPercentage) || 0;
+  
+  if (isDiscounted && (discountValue <= 0 || discountValue > 100)) {
+    const error = new CustomError("Discount percentage must be between 1 and 100", 400);
+    return next(error);
+  }
+
   const productAdd = await product.create({
     productName,
     price,
@@ -55,6 +66,8 @@ const addProduct = asyncErrorHandler(async (req, res, next) => {
     additionalImages,
     categoryType: categoryType || "other",
     specifications: parsedSpecs,
+    hasDiscount: isDiscounted,          // NEW
+    discountPercentage: isDiscounted ? discountValue : 0  // NEW
   });
 
   return res.status(201).json({ message: "ok", productAdd });
@@ -178,6 +191,25 @@ const editProduct = asyncErrorHandler(async (req, res, next) => {
       updateData[field] = req.body[field];
     }
   });
+
+  // NEW: Handle discount fields
+  if (req.body.hasDiscount !== undefined) {
+    const isDiscounted = req.body.hasDiscount === 'true' || req.body.hasDiscount === true;
+    updateData.hasDiscount = isDiscounted;
+    
+    if (isDiscounted && req.body.discountPercentage !== undefined) {
+      const discountValue = parseFloat(req.body.discountPercentage) || 0;
+      
+      if (discountValue <= 0 || discountValue > 100) {
+        const error = new CustomError("Discount percentage must be between 1 and 100", 400);
+        return next(error);
+      }
+      
+      updateData.discountPercentage = discountValue;
+    } else if (!isDiscounted) {
+      updateData.discountPercentage = 0;
+    }
+  }
 
   // Handle specifications
   if (req.body.specifications) {
