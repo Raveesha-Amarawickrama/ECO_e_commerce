@@ -24,7 +24,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import path from "path";
 import { fileURLToPath } from "url";
-
+import reviewRoutes from "./routes/reviewRoutes.js";
 // Load environment variables
 dotenv.config();
 
@@ -100,6 +100,7 @@ app.use("/cart", cartRoutes);
 app.use("/wishlist", wishlistRoutes); 
 
 
+
 // Order & Billing Routes
 app.use("/bill", billRouter);
 app.use("/order", orderRoutes);
@@ -112,7 +113,7 @@ app.use("/contact", contactRoutes);
 
 app.use("/categories", categoryRouter);
 
-
+app.use("/reviews", reviewRoutes); 
 // =====================
 // ERROR HANDLING
 // =====================
