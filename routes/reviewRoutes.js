@@ -4,33 +4,25 @@ import Review from '../model/Review.js';
 
 const router = express.Router();
 
-// GET all reviews (for admin) - MUST BE FIRST before specific routes
+// GET all reviews (for admin)
 router.get('/', async (req, res) => {
   try {
     const { status, limit = 100 } = req.query;
 
-    // Build query
     const query = {};
     if (status) {
       query.status = status;
     }
 
-    // Fetch reviews with product details
     const reviews = await Review.find(query)
       .populate('productId', 'productName mainImage')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit));
 
-    res.json({
-      success: true,
-      reviews
-    });
+    res.json({ success: true, reviews });
   } catch (error) {
     console.error('Error fetching all reviews:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch reviews'
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch reviews' });
   }
 });
 
@@ -38,47 +30,34 @@ router.get('/', async (req, res) => {
 router.get('/product/:productId', async (req, res) => {
   try {
     const { productId } = req.params;
-    const { status = 'approved', limit = 50 } = req.query;
+    const { limit = 50 } = req.query;
 
-    // Build query
-    const query = { productId };
-    if (status) {
-      query.status = status;
-    }
-
-    // Fetch reviews
-    const reviews = await Review.find(query)
+    // ✅ FIX 1: Removed status filter — fetch ALL reviews for this product
+    const reviews = await Review.find({ productId })
       .sort({ createdAt: -1 })
       .limit(parseInt(limit));
 
-    // Calculate statistics
-    const allReviews = await Review.find({ productId, status: 'approved' });
-    
+    // ✅ FIX 2: Calculate stats from ALL reviews, not just approved ones
+    const allReviews = await Review.find({ productId });
+
     const stats = {
       total: allReviews.length,
-      average: allReviews.length > 0 
-        ? allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length 
+      average: allReviews.length > 0
+        ? allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length
         : 0,
       distribution: {
-        5: (allReviews.filter(r => r.rating === 5).length / allReviews.length) * 100 || 0,
-        4: (allReviews.filter(r => r.rating === 4).length / allReviews.length) * 100 || 0,
-        3: (allReviews.filter(r => r.rating === 3).length / allReviews.length) * 100 || 0,
-        2: (allReviews.filter(r => r.rating === 2).length / allReviews.length) * 100 || 0,
-        1: (allReviews.filter(r => r.rating === 1).length / allReviews.length) * 100 || 0,
+        5: allReviews.length > 0 ? (allReviews.filter(r => r.rating === 5).length / allReviews.length) * 100 : 0,
+        4: allReviews.length > 0 ? (allReviews.filter(r => r.rating === 4).length / allReviews.length) * 100 : 0,
+        3: allReviews.length > 0 ? (allReviews.filter(r => r.rating === 3).length / allReviews.length) * 100 : 0,
+        2: allReviews.length > 0 ? (allReviews.filter(r => r.rating === 2).length / allReviews.length) * 100 : 0,
+        1: allReviews.length > 0 ? (allReviews.filter(r => r.rating === 1).length / allReviews.length) * 100 : 0,
       }
     };
 
-    res.json({
-      success: true,
-      reviews,
-      stats
-    });
+    res.json({ success: true, reviews, stats });
   } catch (error) {
     console.error('Error fetching reviews:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch reviews'
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch reviews' });
   }
 });
 
@@ -87,22 +66,15 @@ router.post('/', async (req, res) => {
   try {
     const { productId, rating, name, email, phone, message } = req.body;
 
-    // Validation
     if (!productId || !rating || !name || !email || !message) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required fields'
-      });
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
     if (rating < 1 || rating > 5) {
-      return res.status(400).json({
-        success: false,
-        message: 'Rating must be between 1 and 5'
-      });
+      return res.status(400).json({ success: false, message: 'Rating must be between 1 and 5' });
     }
 
-    // Create review
+    // ✅ FIX 3: Set status to 'approved' so review shows immediately
     const review = new Review({
       productId,
       rating,
@@ -110,7 +82,7 @@ router.post('/', async (req, res) => {
       email,
       phone,
       message,
-      status: 'pending', // Reviews need approval
+      status: 'approved',
       createdAt: new Date()
     });
 
@@ -118,15 +90,12 @@ router.post('/', async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'Review submitted successfully! It will appear after approval.',
+      message: 'Review submitted successfully!',
       review
     });
   } catch (error) {
     console.error('Error creating review:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to submit review'
-    });
+    res.status(500).json({ success: false, message: 'Failed to submit review' });
   }
 });
 
@@ -143,23 +112,13 @@ router.put('/:reviewId', async (req, res) => {
     );
 
     if (!review) {
-      return res.status(404).json({
-        success: false,
-        message: 'Review not found'
-      });
+      return res.status(404).json({ success: false, message: 'Review not found' });
     }
 
-    res.json({
-      success: true,
-      message: 'Review updated successfully',
-      review
-    });
+    res.json({ success: true, message: 'Review updated successfully', review });
   } catch (error) {
     console.error('Error updating review:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update review'
-    });
+    res.status(500).json({ success: false, message: 'Failed to update review' });
   }
 });
 
@@ -171,22 +130,13 @@ router.delete('/:reviewId', async (req, res) => {
     const review = await Review.findByIdAndDelete(reviewId);
 
     if (!review) {
-      return res.status(404).json({
-        success: false,
-        message: 'Review not found'
-      });
+      return res.status(404).json({ success: false, message: 'Review not found' });
     }
 
-    res.json({
-      success: true,
-      message: 'Review deleted successfully'
-    });
+    res.json({ success: true, message: 'Review deleted successfully' });
   } catch (error) {
     console.error('Error deleting review:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to delete review'
-    });
+    res.status(500).json({ success: false, message: 'Failed to delete review' });
   }
 });
 
