@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import { CustomError } from "../utils/customerError.js";
 import sendEmail from "../utils/sendEmail.js";
 import crypto from "crypto";
+import admin from "../utils/firebaseAdmin.js";
 
 const singToken = (id, name) => {
   return jwt.sign({ id, name }, process.env.JWT_SECRET, {
@@ -140,6 +141,52 @@ const loginUser = asyncErrorHandler(async (req, res, next) => {
       return next(error);
     }
   });
+});
+
+const googleAuth = asyncErrorHandler(async (req, res, next) => {
+  const { token } = req.body;
+
+  if (!token) {
+    return next(new CustomError("No token provided", 400));
+  }
+
+  // Verify Firebase token
+  const decodedToken = await admin.auth().verifyIdToken(token);
+  const { email, name, picture, uid } = decodedToken;
+
+  // Find or create user
+  let existingUser = await user.findOne({ username: email });
+
+  if (!existingUser) {
+    // Create new user from Google account
+    existingUser = await user.create({
+      name: name || email.split("@")[0],
+      username: email,
+      phoneNo: "N/A",           // Google doesn't provide phone
+      password: uid,            // Use Firebase UID as placeholder
+      verified: true,
+      isActive: true,
+      role: "user",
+    });
+  }
+
+  if (!existingUser.isActive) {
+    return next(new CustomError("Not Allowed to access", 403));
+  }
+
+  // Issue your own JWT (same as regular login)
+  const jwtToken = singToken(existingUser._id, existingUser.username);
+
+  res.cookie("token", jwtToken, {
+    httpOnly: true,
+    path: "/",
+    expires: new Date(Date.now() + 1000 * 86400),
+    sameSite: "lax",
+  });
+
+  const newUser = await user.findById(existingUser._id).select("-password");
+
+  res.status(200).json({ token: jwtToken, newUser });
 });
 
 const getUser = asyncErrorHandler(async (req, res, next) => {
@@ -572,4 +619,5 @@ export {
   updateCartQuantity,
   clearCart,
   mergeCart,
+  googleAuth,
 };

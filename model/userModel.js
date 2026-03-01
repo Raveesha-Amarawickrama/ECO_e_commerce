@@ -12,11 +12,12 @@ const userSchema = new mongoose.Schema({
   },
   phoneNo: {
     type: String,
-    required: [true, 'please enter your number']
+    minlength: 8,
+    required: [false, 'please enter your number']
   },
   password: {
     type: String,
-    required: [true, "please enter password"],
+    required: [false, "please enter password"],
     minlength: 8
   },
   role: {

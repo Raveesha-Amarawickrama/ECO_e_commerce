@@ -15,6 +15,7 @@ import {
   updateCartQuantity,
   clearCart,
   mergeCart,
+  googleAuth,
 } from "../controller/userController.js";
 import { protect } from "../middleware/authMiddleware.js";
 
@@ -27,7 +28,7 @@ router.route("/register").post(registerUser);
 router.route("/login").post(loginUser);
 router.route("/logout").post(logOutUser);
 router.route("/verify/:token").get(verifyGmail);
-
+router.route("/auth/google").post(googleAuth);
 // ========================================
 // PASSWORD RESET ROUTES
 // ========================================
