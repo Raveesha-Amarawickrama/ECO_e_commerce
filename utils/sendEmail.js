@@ -28,13 +28,13 @@ const sendEmail = async (options) => {
     // 2. Verify transporter configuration
     await transporter.verify();
     console.log("✅ Email transporter is ready");
-    console.log("   Using:", process.env.USER);
+ console.log("   Using:", process.env.EMAIL_USER);
 
     // 3. Define email options
     const mailOptions = {
       from: {
         name: "House of Cambridge",
-        address: process.env.USER, // udithaindunil5@gmail.com
+      address: process.env.EMAIL_USER,  // udithaindunil5@gmail.com
       },
       to: options.email,
       subject: options.subject,
